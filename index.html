@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cosmic Register — pick your birth date among the planets</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <section class="cosmos" aria-label="Solar system date selector">
+      <div class="cosmos-inner">
+        <svg id="sky" viewBox="-320 -320 640 640" role="img"
+             aria-label="Top-down model of the Solar System. Drag any planet along its orbit to change the birth date.">
+          <defs>
+            <radialGradient id="sunGrad" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"  stop-color="#fff7d6" />
+              <stop offset="35%" stop-color="#ffd451" />
+              <stop offset="75%" stop-color="#ff9b21" />
+              <stop offset="100%" stop-color="#ff6a00" stop-opacity="0.15" />
+            </radialGradient>
+            <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9" />
+              <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+          <g id="stars"></g>
+          <g id="orbits"></g>
+          <circle id="sun" cx="0" cy="0" r="16" fill="url(#sunGrad)" />
+          <circle cx="0" cy="0" r="34" fill="url(#glow)" opacity="0.5" />
+          <g id="planets"></g>
+        </svg>
+      </div>
+      <p class="hint" id="hint">Drag any planet around its orbit to travel through time.
+        Outer planets move years per turn; Mercury fine-tunes to the day.</p>
+    </section>
+
+    <section class="panel">
+      <form id="register" novalidate>
+        <h1>Create account</h1>
+        <p class="sub">Sign up the old-fashioned, astronomically-correct way.</p>
+
+        <label class="field">
+          <span>Name</span>
+          <input type="text" id="name" name="name" autocomplete="name" placeholder="Ada Lovelace" required />
+        </label>
+
+        <label class="field">
+          <span>Password</span>
+          <input type="password" id="password" name="password" autocomplete="new-password" placeholder="••••••••" required />
+        </label>
+
+        <div class="field">
+          <span>Birth date</span>
+          <div class="birthdate">
+            <output id="dateReadout" class="readout">—</output>
+            <input type="date" id="dateInput" name="birthdate" />
+          </div>
+          <small class="dragging" id="draggingInfo">Grab a planet to set your birth date.</small>
+        </div>
+
+        <button type="submit" class="cta">Register</button>
+        <p class="result" id="result" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

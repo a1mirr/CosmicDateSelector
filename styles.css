@@ -1,0 +1,186 @@
+:root {
+  --bg: #05060d;
+  --bg-2: #0b1024;
+  --panel: rgba(16, 20, 40, 0.72);
+  --ink: #e8ecff;
+  --muted: #8a93c4;
+  --accent: #ffd451;
+  --accent-2: #6ea8ff;
+  --line: rgba(140, 160, 220, 0.16);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(1200px 800px at 20% -10%, #16204a 0%, transparent 60%),
+    radial-gradient(1000px 700px at 90% 110%, #241640 0%, transparent 55%),
+    var(--bg);
+  color: var(--ink);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 8px;
+  align-items: stretch;
+}
+
+/* ---------- Cosmos ---------- */
+.cosmos {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  overflow: hidden;
+}
+.cosmos-inner {
+  width: min(78vh, 100%);
+  aspect-ratio: 1 / 1;
+  max-width: 720px;
+}
+#sky {
+  width: 100%;
+  height: 100%;
+  display: block;
+  cursor: grab;
+  touch-action: none;
+}
+#sky.grabbing { cursor: grabbing; }
+
+.orbit {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 0.6;
+}
+.orbit.active { stroke: rgba(110, 168, 255, 0.5); stroke-width: 1; }
+
+.planet-hit {
+  fill: transparent;
+  cursor: grab;
+}
+.planet-body { pointer-events: none; }
+.planet-label {
+  pointer-events: none;
+  fill: var(--muted);
+  font-size: 9px;
+  font-family: inherit;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.planet-group:hover .planet-label,
+.planet-group.active .planet-label { opacity: 1; }
+
+#sun { filter: drop-shadow(0 0 12px rgba(255, 180, 40, 0.7)); }
+
+.hint {
+  margin-top: 16px;
+  max-width: 460px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ---------- Panel ---------- */
+.panel {
+  display: flex;
+  align-items: center;
+  padding: 32px;
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  border-left: 1px solid var(--line);
+}
+form {
+  width: 100%;
+  max-width: 380px;
+  margin: 0 auto;
+}
+h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.5px; }
+.sub { margin: 0 0 28px; color: var(--muted); font-size: 14px; }
+
+.field { display: block; margin-bottom: 20px; }
+.field > span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+input[type="text"],
+input[type="password"],
+input[type="date"] {
+  width: 100%;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  font-size: 15px;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+input:focus {
+  outline: none;
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px rgba(110, 168, 255, 0.18);
+}
+input[type="date"] { color-scheme: dark; }
+
+.birthdate {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.readout {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.dragging {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  min-height: 16px;
+}
+.dragging b { color: var(--accent-2); }
+
+.cta {
+  width: 100%;
+  margin-top: 8px;
+  padding: 13px 16px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(120deg, #ffd451, #ff9b21);
+  color: #1a1200;
+  font-size: 15px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.08s ease, filter 0.15s ease;
+}
+.cta:hover { filter: brightness(1.05); }
+.cta:active { transform: translateY(1px); }
+
+.result {
+  margin: 14px 0 0;
+  min-height: 20px;
+  font-size: 14px;
+  color: #7ee0a0;
+}
+.result.error { color: #ff8f8f; }
+
+@media (max-width: 860px) {
+  .shell { grid-template-columns: 1fr; }
+  .panel { border-left: none; border-top: 1px solid var(--line); }
+  .cosmos-inner { width: min(92vw, 520px); }
+}
