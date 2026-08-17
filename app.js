@@ -27,29 +27,113 @@ const ELEMENTS = {
   Saturn:  { N:[113.6634,2.38980e-5],i:[2.4886,-1.081e-7],w:[339.3939,2.97661e-5],a:[9.55475,0],        e:[0.055546,-9.499e-9],M:[316.9670,0.0334442282] },
   Uranus:  { N:[74.0005,1.3978e-5],  i:[0.7733,1.9e-8],  w:[96.6612,3.0565e-5],  a:[19.18171,-1.55e-8], e:[0.047318,7.45e-9],  M:[142.5905,0.011725806] },
   Neptune: { N:[131.7806,3.0173e-5], i:[1.7700,-2.55e-7],w:[272.8461,-6.027e-6], a:[30.05826,3.313e-8], e:[0.008606,2.15e-9],  M:[260.2471,0.005995147] },
-  /* Approximate J2000 elements, shifted to the epoch above. Ceres only ever
-   * shows for its half-century as a planet, and it rides a fixed ring, so this
-   * is close enough for the part of it you can see. */
-  Ceres:   { N:[80.3930,0],          i:[10.5834,0],      w:[73.1187,0],          a:[2.76580,0],         e:[0.079340,0],        M:[188.9540,0.2141] },
 };
 
-/* Pluto has no simple Keplerian fit, so Schlyter gives it a periodic series
- * instead — valid 1800–2100, which comfortably covers the 1930–2006 window
- * where Pluto is a planet and therefore visible at all. */
-const PLUTO_MOTION = 0.003968789; // deg/day, the series' mean argument rate
+/* ---- Two-body propagation from JPL osculating elements ------------------ */
 
-function plutoLongitude(dn) {
-  const S = (50.03 + 0.033459652 * dn) * DEG;
-  const P = (238.95 + PLUTO_MOTION * dn) * DEG;
-  const lon = 238.9508 + 0.00400703 * dn
-    - 19.799 * Math.sin(P)       + 19.848 * Math.cos(P)
-    +  0.897 * Math.sin(2 * P)   -  4.956 * Math.cos(2 * P)
-    +  0.610 * Math.sin(3 * P)   +  1.211 * Math.cos(3 * P)
-    -  0.341 * Math.sin(4 * P)   -  0.190 * Math.cos(4 * P)
-    +  0.128 * Math.sin(5 * P)   -  0.034 * Math.cos(5 * P)
-    -  0.038 * Math.sin(6 * P)   +  0.031 * Math.cos(6 * P)
-    +  0.020 * Math.sin(S - P)   -  0.010 * Math.cos(S - P);
-  return rev(lon) * DEG;
+/* Everything below the planets — Ceres, a comet, an interstellar visitor, a
+ * spacecraft coasting away — is propagated from a single set of osculating
+ * elements taken from JPL Horizons: eccentricity, perihelion distance q (AU),
+ * inclination, ascending node and argument of perihelion (degrees), time of
+ * perihelion Tp (JD) and mean motion n (deg/day).
+ *
+ * Two-body motion is exact for an unperturbed orbit, so each body is only
+ * shown over a window where that assumption holds and the result has been
+ * checked against Horizons. Elliptical and hyperbolic orbits differ only in
+ * which anomaly equation gets solved. */
+const EPOCH_JD = 2451543.5; // JD at dn = 0
+
+function keplerPosition(el, dn) {
+  const e = el.e;
+  let xv, yv; // position in the orbital plane, perihelion along +x
+
+  if (e < 1) {
+    const a = el.q / (1 - e);
+    // Wrap to one revolution about perihelion so Newton always converges.
+    let M = rev(el.n * (dn + EPOCH_JD - el.Tp));
+    if (M > 180) M -= 360;
+    M *= DEG;
+    let E = M + e * Math.sin(M) * (1 + e * Math.cos(M));
+    for (let k = 0; k < 12; k++) {
+      E = E - (E - e * Math.sin(E) - M) / (1 - e * Math.cos(E));
+    }
+    xv = a * (Math.cos(E) - e);
+    yv = a * Math.sqrt(1 - e * e) * Math.sin(E);
+  } else {
+    const A = el.q / (e - 1); // positive; one passage, so no wrapping
+    const M = el.n * (dn + EPOCH_JD - el.Tp) * DEG;
+    let H = Math.asinh(M / e);
+    for (let k = 0; k < 60; k++) {
+      const d = (e * Math.sinh(H) - H - M) / (e * Math.cosh(H) - 1);
+      H -= d;
+      if (Math.abs(d) < 1e-12) break;
+    }
+    xv = A * (e - Math.cosh(H));
+    yv = A * Math.sqrt(e * e - 1) * Math.sinh(H);
+  }
+
+  const N = el.node * DEG, w = el.argp * DEG, i = el.i * DEG;
+  const cN = Math.cos(N), sN = Math.sin(N);
+  const cw = Math.cos(w), sw = Math.sin(w);
+  const ci = Math.cos(i), si = Math.sin(i);
+
+  const x = xv * (cN * cw - sN * sw * ci) + yv * (-cN * sw - sN * cw * ci);
+  const y = xv * (sN * cw + cN * sw * ci) + yv * (-sN * sw + cN * cw * ci);
+
+  // Top-down map: the plotted radius is the distance projected onto the
+  // ecliptic, which is what x and y already are.
+  return { lon: Math.atan2(y, x), r: Math.hypot(x, y) };
+}
+
+const kepler = (el) => (dn) => keplerPosition(el, dn);
+
+/* Halley is the one body here that two-body motion cannot carry across
+ * centuries: Jupiter and Saturn shove its period around between 74 and 79
+ * years, so propagating the 1986 solution back to 1910 lands the comet three
+ * months out — right place on the ellipse, wrong date. JPL fits each
+ * apparition separately, so we carry one element set per apparition and use
+ * whichever perihelion is nearest the date being shown. */
+const HALLEY = [
+  { e: 0.9672960499, q: 0.5872100478, i: 162.2187984, node: 58.56208299,
+    argp: 111.7366941, Tp: 2418781.678417111, n: 0.01295430667 }, // 1910
+  { e: 0.9672792272, q: 0.5871034488, i: 162.2422243, node: 58.85993641,
+    argp: 111.8655481, Tp: 2446470.958961021, n: 0.01296783439 }, // 1986
+  { e: 0.9665767671, q: 0.5927819456, i: 161.9651213, node: 59.39231569,
+    argp: 112.0521038, Tp: 2474034.220124185, n: 0.01319575685 }, // 2061
+];
+
+function halleyPosition(dn) {
+  const jd = dn + EPOCH_JD;
+  let best = HALLEY[0];
+  for (const el of HALLEY) {
+    if (Math.abs(jd - el.Tp) < Math.abs(jd - best.Tp)) best = el;
+  }
+  return keplerPosition(best, dn);
+}
+
+/* ---- Mapping real distances onto the drawing ---------------------------- */
+
+/* The rings are hand-tuned rather than to scale, so anything plotted at a real
+ * distance has to be squeezed through the same curve: interpolate the planets'
+ * own (semi-major axis -> ring) pairs in log space, and continue past Neptune
+ * at a gentler 110px per decade so the far objects stay on the map. */
+const RING_SCALE = [
+  [0.3871, 52], [0.7233, 78], [1.0000, 106], [1.5237, 138], [2.7658, 162],
+  [5.2026, 186], [9.5548, 226], [19.1817, 262], [30.0583, 290],
+];
+
+function ringForAU(au) {
+  const r = Math.max(au, 0.02);
+  if (r <= RING_SCALE[0][0]) return RING_SCALE[0][1] * (r / RING_SCALE[0][0]);
+  for (let k = 1; k < RING_SCALE.length; k++) {
+    const [a0, p0] = RING_SCALE[k - 1], [a1, p1] = RING_SCALE[k];
+    if (r <= a1) {
+      const t = Math.log(r / a0) / Math.log(a1 / a0);
+      return p0 + t * (p1 - p0);
+    }
+  }
+  const [aN, pN] = RING_SCALE[RING_SCALE.length - 1];
+  return pN + 110 * Math.log10(r / aN);
 }
 
 /* Display config: ring = orbit radius on screen (px), size = planet radius,
@@ -65,8 +149,13 @@ const PLANETS = [
   { name: "Venus",   ring: 78,  size: 4.2, color: "#e6c98a" },
   { name: "Earth",   ring: 106, size: 4.4, color: "#5b9bff" },
   { name: "Mars",    ring: 138, size: 3.4, color: "#e07a4d" },
-  // A planet from Piazzi's discovery until the asteroid belt filled up around it.
-  { name: "Ceres",   ring: 162, size: 2.8, color: "#a9a49a",
+  // A planet from Piazzi's discovery until the asteroid belt filled up around
+  // it. Elements osculating at 1825, the middle of that half-century.
+  { name: "Ceres",   size: 2.8, color: "#a9a49a",
+    at: kepler({ e: 0.078597801, q: 2.549992651, i: 10.63160989,
+                 node: 83.19164578, argp: 65.30507952,
+                 Tp: 2387588.515790960, n: 0.2140767717 }),
+    period: 1681.64, motion: 0.2140767717,
     from: Date.UTC(1801, 0, 1), until: Date.UTC(1852, 0, 1) },
   { name: "Jupiter", ring: 186, size: 9.0, color: "#d9a679" },
   { name: "Saturn",  ring: 226, size: 7.6, color: "#e8d19b" },
@@ -75,8 +164,80 @@ const PLANETS = [
   // Predicted by Le Verrier, found by Galle on the night of 23 September 1846.
   { name: "Neptune", ring: 290, size: 5.4, color: "#5b7bff", from: Date.UTC(1846, 8, 23) },
   // Tombaugh, 18 February 1930 — until the IAU's definition on 24 August 2006.
-  { name: "Pluto",   ring: 312, size: 3.2, color: "#cbb6a4",
+  // Elements osculating at 1968, the middle of that window. Plotted at its
+  // true distance, so with e = 0.25 it swings from 49 AU down inside Neptune's
+  // ring at perihelion in 1989, exactly as it does in the sky.
+  { name: "Pluto",   size: 3.2, color: "#cbb6a4",
+    at: kepler({ e: 0.2522245672, q: 29.62583757, i: 17.06324778,
+                 node: 109.8122650, argp: 114.3469360,
+                 Tp: 2447814.188036249, n: 0.003952345558 }),
+    period: 91085.153, motion: 0.003952345558,
     from: Date.UTC(1930, 1, 18), until: Date.UTC(2006, 7, 24) },
+];
+
+/* Where a body sits on the drawing: an angle, and a radius that is either its
+ * hand-tuned ring or its real distance squeezed through `ringForAU`. */
+function bodyPosition(p, dn) {
+  if (p.at) {
+    const s = p.at(dn);
+    return { lon: s.lon, ring: ringForAU(s.r) };
+  }
+  return { lon: heliocentricLongitude(p.name, dn), ring: p.ring };
+}
+
+/* ---- Extras: things that are not planets, shown only full screen -------
+ *
+ * These would swamp the little popup, so they only appear once the sky has
+ * room. Each is propagated from JPL Horizons osculating elements over a window
+ * where two-body motion holds — after a spacecraft's last gravity assist, or
+ * around a comet's own apparition — and each was checked against Horizons.
+ *
+ * Cassini and the cruise phases of the others are deliberately absent: their
+ * paths are strings of gravity assists and burns that no closed-form orbit
+ * reproduces. Cassini appears only for its years in orbit at Saturn, where
+ * riding Saturn's position is accurate to far less than a pixel here. */
+const EXTRAS = [
+  // 1P/Halley. The dot uses the apparition nearest the date; the drawn ellipse
+  // is one revolution of the 1986 solution, so it doesn't kink where the
+  // element sets hand over.
+  { name: "Halley", size: 2.0, color: "#8ee0c0",
+    at: halleyPosition, pathAt: kepler(HALLEY[1]), period: 27760.996,
+    from: Date.UTC(1900, 0, 1), until: Date.UTC(2100, 0, 1) },
+
+  // 3I/ATLAS, the third known interstellar object: hyperbolic, e = 6.14, so it
+  // crosses once and never returns. Shown from its discovery on 1 July 2025.
+  { name: "3I/ATLAS", size: 1.8, color: "#c9a2ff",
+    at: kepler({ e: 6.139755265, q: 1.356442543, i: 175.1135356,
+                 node: 322.1547641, argp: 128.0057210,
+                 Tp: 2460977.983124003, n: 7.269685622 }),
+    from: Date.UTC(2025, 6, 1) },
+
+  // Voyager 1 after its Titan flyby of 12 November 1980 put it on the escape
+  // hyperbola it has followed ever since.
+  { name: "Voyager 1", size: 1.6, color: "#ffd451", craft: true,
+    at: kepler({ e: 3.695530547, q: 8.670423985, i: 35.78608710,
+                 node: 179.0656404, argp: 338.0564708,
+                 Tp: 2444231.466052787, n: 0.1708480232 }),
+    from: Date.UTC(1980, 10, 13) },
+
+  // Voyager 2 after Neptune, 25 August 1989. Its orbit is steeply inclined
+  // (79°), so on this top-down map it reads much closer in than it really is.
+  { name: "Voyager 2", size: 1.6, color: "#ffb457", craft: true,
+    at: kepler({ e: 6.283315907, q: 21.24898323, i: 79.00274168,
+                 node: 101.8247301, argp: 130.0377591,
+                 Tp: 2445451.634079524, n: 0.1221959219 }),
+    from: Date.UTC(1989, 7, 26) },
+
+  // New Horizons after its Jupiter assist of 28 February 2007.
+  { name: "New Horizons", size: 1.6, color: "#7ee0a0", craft: true,
+    at: kepler({ e: 1.408801545, q: 2.305834525, i: 2.262922701,
+                 node: 226.5467691, argp: 291.4515432,
+                 Tp: 2453771.276271808, n: 0.07357506587 }),
+    from: Date.UTC(2007, 2, 1) },
+
+  // Saturn orbit insertion to the Grand Finale, 2004–2017.
+  { name: "Cassini", size: 1.6, color: "#e8d19b", craft: true, follows: "Saturn",
+    from: Date.UTC(2004, 6, 1), until: Date.UTC(2017, 8, 16) },
 ];
 
 /* Was this body a planet on the given date? */
@@ -110,7 +271,6 @@ function dayNumber(ms) {
 
 /* Heliocentric ecliptic longitude (radians) of a planet on day `dn`. */
 function heliocentricLongitude(name, dn) {
-  if (name === "Pluto") return plutoLongitude(dn);
   const el = ELEMENTS[name === "Earth" ? "Earth" : name];
   const N = rev(el.N[0] + el.N[1] * dn) * DEG;
   const i = (el.i[0] + el.i[1] * dn) * DEG;
@@ -146,6 +306,9 @@ const svg = document.getElementById("sky");
 const orbitsG = document.getElementById("orbits");
 const planetsG = document.getElementById("planets");
 const starsG = document.getElementById("stars");
+const extrasG = document.getElementById("extras");
+const extraOrbitsG = document.getElementById("extraOrbits");
+const fsDate = document.getElementById("fsDate");
 const dateInput = document.getElementById("dateInput"); // hidden, carries the form value
 const dateText = document.getElementById("dateText");
 const dateAnchor = document.getElementById("dateAnchor");
@@ -159,10 +322,56 @@ function svgEl(tag, attrs) {
   return el;
 }
 
+/* Trace a real orbit. Closed orbits get one full revolution starting in 1800,
+ * the beginning of the Pluto series' validity; open ones get the arc they are
+ * actually shown over, which is the only part that means anything. */
+function orbitPath(p, steps = 240) {
+  const closed = p.period !== undefined;
+  const dn0 = closed ? dayNumber(Date.UTC(1800, 0, 1)) : dayNumber(p.from);
+  const span = closed ? p.period : dayNumber(Math.min(p.until ?? MAX_DATE, MAX_DATE)) - dn0;
+
+  const shape = p.pathAt ? { at: p.pathAt } : p;
+  let d = "";
+  for (let k = 0; k <= steps; k++) {
+    const { lon, ring } = bodyPosition(shape, dn0 + (k / steps) * span);
+    const x = (Math.cos(lon) * ring).toFixed(2);
+    const y = (-Math.sin(lon) * ring).toFixed(2);
+    d += (k ? "L" : "M") + x + " " + y;
+  }
+  return closed ? d + "Z" : d;
+}
+
+/* One body: its orbit line, its dot, its label. Planets get a drag handle;
+ * the extras are along for the ride. */
+function buildBody(p, { draggable }) {
+  const orbitParent = draggable ? orbitsG : extraOrbitsG;
+  const bodyParent = draggable ? planetsG : extrasG;
+
+  let orbit = null;
+  if (p.at) orbit = svgEl("path", { class: "orbit", "data-orbit": p.name, d: orbitPath(p) });
+  else if (p.ring) orbit = svgEl("circle", { class: "orbit", "data-orbit": p.name, cx: 0, cy: 0, r: p.ring });
+  if (orbit) orbitParent.appendChild(orbit);
+
+  const g = svgEl("g", { class: draggable ? "planet-group" : "planet-group extra", "data-planet": p.name });
+  // Generous grab radius: the popup shows this 640-unit scene at ~340px.
+  const hit = svgEl("circle", { class: "planet-hit", r: Math.max(p.size + 12, 18) });
+  const body = svgEl("circle", { class: "planet-body", r: p.size, fill: p.color });
+  const label = svgEl("text", {
+    class: draggable ? "planet-label" : "planet-label extra-label",
+    "text-anchor": "middle", dy: -p.size - 5,
+  });
+  label.textContent = p.name;
+  g.append(hit, body, label);
+  bodyParent.appendChild(g);
+  nodes[p.name] = { group: g, hit, body, label, orbit };
+
+  if (draggable) attachDrag(p, g);
+}
+
 function buildScene() {
-  // Starfield
-  for (let n = 0; n < 140; n++) {
-    const r = 30 + Math.random() * 290;
+  // Starfield, drawn out to the full-screen frame rather than the popup's.
+  for (let n = 0; n < 220; n++) {
+    const r = 30 + Math.random() * 560;
     const a = Math.random() * Math.PI * 2;
     starsG.appendChild(svgEl("circle", {
       cx: (Math.cos(a) * r).toFixed(1),
@@ -173,38 +382,28 @@ function buildScene() {
     }));
   }
 
-  for (const p of PLANETS) {
-    const orbit = svgEl("circle", { class: "orbit", "data-orbit": p.name, cx: 0, cy: 0, r: p.ring });
-    orbitsG.appendChild(orbit);
-
-    const g = svgEl("g", { class: "planet-group", "data-planet": p.name });
-    // Generous grab radius: the popup shows this 640-unit scene at ~340px.
-    const hit = svgEl("circle", { class: "planet-hit", r: Math.max(p.size + 12, 18) });
-    const body = svgEl("circle", { class: "planet-body", r: p.size, fill: p.color });
-    const label = svgEl("text", { class: "planet-label", "text-anchor": "middle", dy: -p.size - 5 });
-    label.textContent = p.name;
-    g.append(hit, body, label);
-    planetsG.appendChild(g);
-    nodes[p.name] = { group: g, hit, body, label, orbit };
-
-    attachDrag(p, g);
-  }
+  for (const p of PLANETS) buildBody(p, { draggable: true });
+  for (const p of EXTRAS) buildBody(p, { draggable: false });
 }
 
 function render() {
   const dn = dayNumber(currentMs);
-  for (const p of PLANETS) {
-    // Fade out anything that wasn't a planet on this date, and stop computing
-    // a position for it — Pluto's series is only valid over its own window.
+  for (const p of [...PLANETS, ...EXTRAS]) {
+    // Fade out anything that didn't exist, or wasn't a planet, on this date —
+    // and stop computing a position for it, since each body's model is only
+    // meaningful inside its own window.
+    const { group, label, orbit } = nodes[p.name];
     const here = isPlanetOn(p, currentMs);
-    nodes[p.name].group.classList.toggle("gone", !here);
-    nodes[p.name].orbit.classList.toggle("gone", !here);
+    group.classList.toggle("gone", !here);
+    orbit?.classList.toggle("gone", !here);
     if (!here) continue;
 
-    const lon = heliocentricLongitude(p.name, dn);
-    const x = Math.cos(lon) * p.ring;
-    const y = -Math.sin(lon) * p.ring; // SVG y grows downward
-    const { group, label } = nodes[p.name];
+    // Cassini has no orbit of its own here: for its years at Saturn, Saturn's
+    // position is its position to well under a pixel.
+    const src = p.follows ? PLANETS.find((q) => q.name === p.follows) : p;
+    const { lon, ring } = bodyPosition(src, dn);
+    const x = Math.cos(lon) * ring;
+    const y = -Math.sin(lon) * ring; // SVG y grows downward
     group.querySelector(".planet-hit").setAttribute("cx", x.toFixed(2));
     group.querySelector(".planet-hit").setAttribute("cy", y.toFixed(2));
     group.querySelector(".planet-body").setAttribute("cx", x.toFixed(2));
@@ -237,6 +436,7 @@ function updateDateUI() {
   const d = new Date(currentMs);
   dateInput.value = isoDate(d);
   dateText.textContent = displayDate(d);
+  fsDate.textContent = displayDate(d); // the field is off-screen full screen
 }
 
 /* ---- The dropdown: hover to open, drag to pick ------------------------ */
@@ -264,9 +464,31 @@ function closePicker() {
  * slipping a few pixels off a planet mid-drag — doesn't dismiss it. */
 function scheduleClose() {
   if (planetDragging) { closeWhenDragEnds = true; return; }
+  if (document.fullscreenElement) return; // hover is meaningless full screen
   clearTimeout(closeTimer);
   closeTimer = setTimeout(closePicker, 180);
 }
+
+/* ---- Full screen ------------------------------------------------------- */
+
+const expandBtn = document.getElementById("expandBtn");
+expandBtn.addEventListener("click", () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else picker.requestFullscreen?.().catch(() => {});
+});
+/* Full screen zooms out as well as enlarging: Voyager 1 sits at ~370 on this
+ * scale, far outside the frame the planets need. */
+const VIEWBOX = { normal: "-320 -320 640 640", full: "-420 -420 840 840" };
+
+document.addEventListener("fullscreenchange", () => {
+  const full = document.fullscreenElement === picker;
+  svg.setAttribute("viewBox", full ? VIEWBOX.full : VIEWBOX.normal);
+  expandBtn.title = full ? "Exit full screen" : "Full screen";
+  expandBtn.setAttribute("aria-label", expandBtn.title);
+  // Coming back from full screen the pointer is usually nowhere near the
+  // field, and no pointerleave will fire — so close unless it really is there.
+  if (!full && !dateAnchor.matches(":hover")) closePicker();
+});
 
 // The popup lives inside the anchor, so hovering it keeps the anchor hovered.
 dateAnchor.addEventListener("pointerenter", openPicker);
@@ -281,7 +503,11 @@ dateBox.addEventListener("keydown", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !picker.hidden) { closePicker(); dateBox.focus(); }
+  // In full screen, Escape belongs to the browser: let it just exit.
+  if (e.key === "Escape" && !picker.hidden && !document.fullscreenElement) {
+    closePicker();
+    dateBox.focus();
+  }
 });
 document.addEventListener("pointerdown", (e) => {
   if (!picker.hidden && !dateAnchor.contains(e.target)) closePicker();
@@ -290,13 +516,13 @@ document.addEventListener("pointerdown", (e) => {
 /* ---- Dragging: angle delta -> date delta ------------------------------ */
 
 function pointerAngle(evt) {
-  // Angle of the pointer about the Sun, in the same orientation as our plot
-  // (counter-clockwise positive), in radians.
-  const rect = svg.getBoundingClientRect();
-  const vb = 640; // viewBox spans -320..320
-  const x = ((evt.clientX - rect.left) / rect.width) * vb - vb / 2;
-  const y = ((evt.clientY - rect.top) / rect.height) * vb - vb / 2;
-  return Math.atan2(-y, x);
+  // Angle of the pointer about the Sun, counter-clockwise positive, in
+  // radians. Ask the SVG itself for the mapping: the viewBox changes in full
+  // screen, and there the drawing is letterboxed inside a wide viewport.
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return 0;
+  const pt = new DOMPoint(evt.clientX, evt.clientY).matrixTransform(ctm.inverse());
+  return Math.atan2(-pt.y, pt.x);
 }
 
 function attachDrag(planet, group) {
@@ -305,7 +531,12 @@ function attachDrag(planet, group) {
   let pointerId = null;
 
   // deg/day — how far the grabbed planet's own year stretches the timeline.
-  const meanMotion = planet.name === "Pluto" ? PLUTO_MOTION : ELEMENTS[planet.name].M[1];
+  const meanMotion = planet.motion ?? ELEMENTS[planet.name].M[1];
+
+  // The dates this particular body can take you to. `until` is exclusive, so
+  // the last day it can reach is the day before it stopped being a planet.
+  const lo = planet.from === undefined ? MIN_DATE : Math.max(MIN_DATE, planet.from);
+  const hi = planet.until === undefined ? MAX_DATE : Math.min(MAX_DATE, planet.until - DAY_MS);
 
   const onDown = (evt) => {
     evt.preventDefault();
@@ -333,8 +564,10 @@ function attachDrag(planet, group) {
     const deltaDays = deltaDeg / meanMotion;
     currentMs += deltaDays * DAY_MS;
 
-    if (currentMs < MIN_DATE) currentMs = MIN_DATE;
-    if (currentMs > MAX_DATE) currentMs = MAX_DATE;
+    // A body can only carry you through dates on which it exists: drag Pluto
+    // and time stops dead at its discovery and at its demotion.
+    if (currentMs < lo) currentMs = lo;
+    if (currentMs > hi) currentMs = hi;
 
     render();
   };

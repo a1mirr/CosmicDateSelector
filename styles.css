@@ -103,6 +103,47 @@ h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.5px; }
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   overflow: hidden;
 }
+.expand {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: rgba(10, 14, 30, 0.75);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+.expand:hover, .expand:focus-visible { opacity: 1; border-color: var(--accent-2); outline: none; }
+.expand svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+/* Full screen: the popup takes the whole display and the sky scales with it,
+ * which is the only way the outer bodies get room to breathe. */
+.picker:fullscreen {
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: var(--bg);
+}
+.picker:fullscreen .expand { top: 18px; right: 18px; width: 34px; height: 34px; }
+.picker:fullscreen .expand svg { width: 17px; height: 17px; }
+
 /* Short or narrow viewports can't fit a 340px square below the field, and an
  * absolutely-positioned popup can't grow the page to make room — so centre it
  * over the form instead of dropping it down. */
@@ -134,13 +175,14 @@ h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.5px; }
 .orbit.active { stroke: rgba(110, 168, 255, 0.55); stroke-width: 2; }
 
 /* Bodies that weren't planets on the selected date fade away, orbit and all.
- * The one you're currently dragging keeps its grab handle even after it winks
- * out, so you can always drag it back into existence. */
+ * Nothing can vanish mid-drag — a body's drag stops at its own dates — so a
+ * faded body is simply not there to grab. */
 .planet-group,
 .orbit { transition: opacity 0.35s ease; }
 .planet-group.gone,
 .orbit.gone { opacity: 0; }
-.planet-group.gone:not(.active) { pointer-events: none; }
+.planet-group.gone { pointer-events: none; }
+.orbit { fill: none; }
 
 .planet-hit {
   fill: transparent;
@@ -159,6 +201,34 @@ h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.5px; }
 .planet-group.active .planet-label { opacity: 1; }
 
 #sun { filter: drop-shadow(0 0 12px rgba(255, 180, 40, 0.7)); }
+
+/* Comets, spacecraft and the interstellar visitor would clutter a 340px
+ * popup, so they only come out full screen, where there is room for them. */
+.extras { display: none; }
+.picker:fullscreen .extras { display: block; }
+.extra .planet-body { opacity: 0.95; }
+.extra-label { opacity: 1; font-size: 11px; fill: var(--muted); }
+#extraOrbits .orbit { stroke: rgba(140, 160, 220, 0.22); stroke-dasharray: 4 5; }
+
+/* The date lives in the field, which is nowhere to be seen full screen. */
+.fs-date {
+  display: none;
+  position: absolute;
+  z-index: 2;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  background: rgba(8, 11, 26, 0.8);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+}
+.picker:fullscreen .fs-date { display: block; }
 
 /* ---------- Submit ---------- */
 .cta {

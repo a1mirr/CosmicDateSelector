@@ -29,6 +29,11 @@
           </div>
 
           <div class="picker" id="picker" role="dialog" aria-label="Solar system date selector" hidden>
+            <button type="button" class="expand" id="expandBtn" title="Full screen" aria-label="Full screen">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M9 3H3v6M15 3h6v6M9 21H3v-6M15 21h6v-6" />
+              </svg>
+            </button>
             <svg id="sky" viewBox="-320 -320 640 640">
               <defs>
                 <radialGradient id="sunGrad" cx="50%" cy="50%" r="50%">
@@ -44,10 +49,13 @@
               </defs>
               <g id="stars"></g>
               <g id="orbits"></g>
+              <g id="extraOrbits" class="extras"></g>
               <circle id="sun" cx="0" cy="0" r="16" fill="url(#sunGrad)" />
               <circle cx="0" cy="0" r="34" fill="url(#glow)" opacity="0.5" />
               <g id="planets"></g>
+              <g id="extras" class="extras"></g>
             </svg>
+            <output class="fs-date" id="fsDate">—</output>
           </div>
         </div>
 

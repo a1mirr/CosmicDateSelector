@@ -24,6 +24,27 @@ low-precision Keplerian orbital elements (after Paul Schlyter's
 so for any given date the planets sit at their true heliocentric ecliptic
 longitudes.
 
+## Full screen
+
+The button in the corner of the popup opens the sky full screen, which zooms
+out far enough to add the things that would swamp a 340px square: comet
+Halley, the interstellar object 3I/ATLAS, Voyager 1 and 2, New Horizons, and
+Cassini during its years at Saturn.
+
+These are propagated from [JPL Horizons](https://ssd.jpl.nasa.gov/horizons/)
+osculating elements, each over a window where two-body motion actually holds —
+after a spacecraft's last gravity assist, or around a comet's own apparition —
+and each was checked back against Horizons vectors. Positions agree to within
+about 0.1° in longitude. Anything that needs more than that isn't here:
+Cassini's cruise, or any other trajectory made of gravity assists and burns,
+has no closed-form orbit to draw.
+
+Two caveats on the drawing. It is a top-down view, so a body is plotted at its
+distance projected onto the ecliptic — Voyager 2, on a 79° orbit, reads much
+closer in than it is. And the radial scale is squeezed (roughly logarithmic,
+calibrated on the planets' own rings) so that 1 AU and 138 AU fit on one map.
+Angles are true; radii are compressed.
+
 ## Run locally
 
 It's plain static HTML/CSS/JS with no build step. Just open `index.html`, or
