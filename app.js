@@ -102,6 +102,11 @@ const HALLEY = [
     argp: 112.0521038, Tp: 2474034.220124185, n: 0.01319575685 }, // 2061
 ];
 
+/* 3I/ATLAS (C/2025 N1), Horizons elements at 2026-01-01. */
+const ATLAS = { e: 6.139755265, q: 1.356442543, i: 175.1135356,
+                node: 322.1547641, argp: 128.0057210,
+                Tp: 2460977.983124003, n: 7.269685622 };
+
 function halleyPosition(dn) {
   const jd = dn + EPOCH_JD;
   let best = HALLEY[0];
@@ -195,7 +200,14 @@ function bodyPosition(p, dn) {
  * Cassini and the cruise phases of the others are deliberately absent: their
  * paths are strings of gravity assists and burns that no closed-form orbit
  * reproduces. Cassini appears only for its years in orbit at Saturn, where
- * riding Saturn's position is accurate to far less than a pixel here. */
+ * riding Saturn's position is accurate to far less than a pixel here.
+ *
+ * An orbit line is only drawn where the whole orbit is real: a closed ellipse
+ * for the comet, the complete hyperbolic branch for the interstellar visitor.
+ * The spacecraft get none. Their escape hyperbola only describes them after
+ * their last planetary encounter — run it backwards and it draws a journey
+ * they never made — so there is no full orbit to draw, and half of one would
+ * claim more than is known. */
 const EXTRAS = [
   // 1P/Halley. The dot uses the apparition nearest the date; the drawn ellipse
   // is one revolution of the 1986 solution, so it doesn't kink where the
@@ -205,11 +217,12 @@ const EXTRAS = [
     from: Date.UTC(1900, 0, 1), until: Date.UTC(2100, 0, 1) },
 
   // 3I/ATLAS, the third known interstellar object: hyperbolic, e = 6.14, so it
-  // crosses once and never returns. Shown from its discovery on 1 July 2025.
+  // crosses once and never returns. Its whole trajectory is real and
+  // unperturbed, so the drawn line runs the entire branch — in from beyond the
+  // frame, round the Sun, and back out — not merely the stretch since it was
+  // discovered on 1 July 2025.
   { name: "3I/ATLAS", size: 1.8, color: "#c9a2ff",
-    at: kepler({ e: 6.139755265, q: 1.356442543, i: 175.1135356,
-                 node: 322.1547641, argp: 128.0057210,
-                 Tp: 2460977.983124003, n: 7.269685622 }),
+    at: kepler(ATLAS), branch: ATLAS,
     from: Date.UTC(2025, 6, 1) },
 
   // Voyager 1 after its Titan flyby of 12 November 1980 put it on the escape
@@ -322,23 +335,42 @@ function svgEl(tag, attrs) {
   return el;
 }
 
-/* Trace a real orbit. Closed orbits get one full revolution starting in 1800,
- * the beginning of the Pluto series' validity; open ones get the arc they are
- * actually shown over, which is the only part that means anything. */
+/* One full revolution of a closed orbit, sampled from 1800 onwards. */
 function orbitPath(p, steps = 240) {
-  const closed = p.period !== undefined;
-  const dn0 = closed ? dayNumber(Date.UTC(1800, 0, 1)) : dayNumber(p.from);
-  const span = closed ? p.period : dayNumber(Math.min(p.until ?? MAX_DATE, MAX_DATE)) - dn0;
-
+  const dn0 = dayNumber(Date.UTC(1800, 0, 1));
   const shape = p.pathAt ? { at: p.pathAt } : p;
   let d = "";
   for (let k = 0; k <= steps; k++) {
-    const { lon, ring } = bodyPosition(shape, dn0 + (k / steps) * span);
+    const { lon, ring } = bodyPosition(shape, dn0 + (k / steps) * p.period);
     const x = (Math.cos(lon) * ring).toFixed(2);
     const y = (-Math.sin(lon) * ring).toFixed(2);
     d += (k ? "L" : "M") + x + " " + y;
   }
-  return closed ? d + "Z" : d;
+  return d + "Z";
+}
+
+/* The whole of an open orbit, which for a hyperbola means both arms out to
+ * where they leave the drawing. Stepping the hyperbolic anomaly rather than
+ * the date spaces the samples evenly along the curve — dates bunch absurdly
+ * near perihelion and stretch to centuries out on the arms. */
+const FRAME_AU = 457; // distance that lands on the edge of the full-screen frame
+
+function branchPath(el, steps = 320) {
+  const A = el.q / (el.e - 1);
+  const Hmax = Math.acosh(Math.max((FRAME_AU / A + 1) / el.e, 1.0001));
+  const nRad = el.n * DEG; // rad/day
+
+  let d = "";
+  for (let k = 0; k <= steps; k++) {
+    const H = -Hmax + (2 * Hmax * k) / steps;
+    const jd = el.Tp + (el.e * Math.sinh(H) - H) / nRad; // Kepler's equation, forwards
+    const { lon, r } = keplerPosition(el, jd - EPOCH_JD);
+    const ring = ringForAU(r);
+    const x = (Math.cos(lon) * ring).toFixed(2);
+    const y = (-Math.sin(lon) * ring).toFixed(2);
+    d += (k ? "L" : "M") + x + " " + y;
+  }
+  return d;
 }
 
 /* One body: its orbit line, its dot, its label. Planets get a drag handle;
@@ -347,8 +379,10 @@ function buildBody(p, { draggable }) {
   const orbitParent = draggable ? orbitsG : extraOrbitsG;
   const bodyParent = draggable ? planetsG : extrasG;
 
+  // Only bodies whose entire orbit can be drawn truthfully get a line.
   let orbit = null;
-  if (p.at) orbit = svgEl("path", { class: "orbit", "data-orbit": p.name, d: orbitPath(p) });
+  if (p.period) orbit = svgEl("path", { class: "orbit", "data-orbit": p.name, d: orbitPath(p) });
+  else if (p.branch) orbit = svgEl("path", { class: "orbit", "data-orbit": p.name, d: branchPath(p.branch) });
   else if (p.ring) orbit = svgEl("circle", { class: "orbit", "data-orbit": p.name, cx: 0, cy: 0, r: p.ring });
   if (orbit) orbitParent.appendChild(orbit);
 
