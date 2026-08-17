@@ -681,63 +681,97 @@ function pointerAngle(evt) {
   return Math.atan2(-pt.y, pt.x);
 }
 
+/* deg/day — how far the grabbed planet's own year stretches the timeline. */
+const paceOf = (p) => Math.abs(p.motion ?? ELEMENTS[p.name].M[1]);
+
+/* The dates this particular body can take you to. `until` is exclusive, so the
+ * last day it can reach is the day before it stopped being a planet. */
+function boundsOf(p) {
+  return {
+    lo: p.from === undefined ? MIN_DATE : Math.max(MIN_DATE, p.from),
+    hi: p.until === undefined ? MAX_DATE : Math.min(MAX_DATE, p.until - DAY_MS),
+  };
+}
+
+/* One drag at a time, and the body it is holding can change mid-drag. */
+let drag = null;
+
+function holdBody(p) {
+  if (drag.body) {
+    nodes[drag.body.name].group.classList.remove("active");
+    nodes[drag.body.name].orbit?.classList.remove("active");
+  }
+  drag.body = p;
+  drag.pace = paceOf(p);
+  Object.assign(drag, boundsOf(p));
+  nodes[p.name].group.classList.add("active");
+  nodes[p.name].orbit?.classList.add("active");
+}
+
+/* Run out of dates and the drag doesn't end — it is handed to a planet that
+ * still exists, and you keep going without letting go. The successor is the
+ * one whose year is closest in length to the one you were holding, which
+ * walking outward-in means the next planet along: Pluto winks out in 1930 and
+ * Neptune takes over, Neptune goes in 1846 and Uranus has it, Uranus in 1781
+ * and Saturn carries you the rest of the way back. */
+function handOff(direction) {
+  const usable = PLANETS.filter((p) => {
+    if (p === drag.body || !isPlanetOn(p, currentMs)) return false;
+    const b = boundsOf(p);
+    return direction < 0 ? b.lo < currentMs : b.hi > currentMs;
+  });
+  if (!usable.length) return false;
+
+  const held = drag.pace;
+  usable.sort((a, b) => Math.abs(Math.log(paceOf(a) / held)) - Math.abs(Math.log(paceOf(b) / held)));
+  holdBody(usable[0]);
+  return true;
+}
+
 function attachDrag(planet, group) {
-  let dragging = false;
-  let lastAngle = 0;
-  let pointerId = null;
-
-  // deg/day — how far the grabbed planet's own year stretches the timeline.
-  const meanMotion = planet.motion ?? ELEMENTS[planet.name].M[1];
-
-  // The dates this particular body can take you to. `until` is exclusive, so
-  // the last day it can reach is the day before it stopped being a planet.
-  const lo = planet.from === undefined ? MIN_DATE : Math.max(MIN_DATE, planet.from);
-  const hi = planet.until === undefined ? MAX_DATE : Math.min(MAX_DATE, planet.until - DAY_MS);
-
   const onDown = (evt) => {
     evt.preventDefault();
-    dragging = true;
+    drag = { body: null, group, pointerId: evt.pointerId, lastAngle: pointerAngle(evt) };
+    holdBody(planet);
     planetDragging = true;
-    pointerId = evt.pointerId;
-    lastAngle = pointerAngle(evt);
-    group.classList.add("active");
     svg.classList.add("grabbing");
-    document.querySelector(`.orbit[data-orbit="${planet.name}"]`).classList.add("active");
-    group.setPointerCapture?.(pointerId);
+    group.setPointerCapture?.(evt.pointerId);
   };
 
   const onMove = (evt) => {
-    if (!dragging || evt.pointerId !== pointerId) return;
+    if (!drag || evt.pointerId !== drag.pointerId) return;
     const a = pointerAngle(evt);
-    let delta = a - lastAngle; // radians
+    let delta = a - drag.lastAngle; // radians
     // Unwrap to the shortest arc so a full sweep doesn't jump a whole period.
     if (delta > Math.PI) delta -= 2 * Math.PI;
     if (delta < -Math.PI) delta += 2 * Math.PI;
-    lastAngle = a;
+    drag.lastAngle = a;
 
     // Prograde motion (increasing longitude) advances time.
-    const deltaDeg = delta / DEG;
-    const deltaDays = deltaDeg / meanMotion;
-    currentMs += deltaDays * DAY_MS;
+    currentMs += (delta / DEG / drag.pace) * DAY_MS;
 
-    // A body can only carry you through dates on which it exists: drag Pluto
-    // and time stops dead at its discovery and at its demotion.
-    if (currentMs < lo) currentMs = lo;
-    if (currentMs > hi) currentMs = hi;
+    // Only hand over when it is the body that ran out, not the calendar: at
+    // today, and at the bottom of what a date can hold, everything stops.
+    if (currentMs < drag.lo) {
+      currentMs = drag.lo;
+      if (drag.lo > MIN_DATE) handOff(-1);
+    } else if (currentMs > drag.hi) {
+      currentMs = drag.hi;
+      if (drag.hi < MAX_DATE) handOff(+1);
+    }
 
     render();
   };
 
   const onUp = (evt) => {
-    if (!dragging) return;
-    dragging = false;
+    if (!drag) return;
+    nodes[drag.body.name].group.classList.remove("active");
+    nodes[drag.body.name].orbit?.classList.remove("active");
+    drag.group.releasePointerCapture?.(drag.pointerId);
+    drag = null;
     planetDragging = false;
-    if (closeWhenDragEnds) scheduleClose(); // pointer wandered off during the drag
-    group.classList.remove("active");
     svg.classList.remove("grabbing");
-    document.querySelector(`.orbit[data-orbit="${planet.name}"]`).classList.remove("active");
-    group.releasePointerCapture?.(pointerId);
-    pointerId = null;
+    if (closeWhenDragEnds) scheduleClose(); // pointer wandered off during the drag
   };
 
   group.addEventListener("pointerdown", onDown);
