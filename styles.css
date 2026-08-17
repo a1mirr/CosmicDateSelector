@@ -209,6 +209,9 @@ h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.5px; }
 .extra .planet-body { opacity: 0.95; }
 .extra-label { opacity: 1; font-size: 11px; fill: var(--muted); }
 #extraOrbits .orbit { stroke: rgba(140, 160, 220, 0.22); stroke-dasharray: 4 5; }
+/* A flown path is a record of where something went, not an orbit — drawn
+ * solid, and a little brighter, to say so. */
+#extraOrbits .orbit.flown { stroke: rgba(170, 190, 240, 0.3); stroke-dasharray: none; }
 
 /* The date lives in the field, which is nowhere to be seen full screen. */
 .fs-date {

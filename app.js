@@ -15,6 +15,17 @@
 const DEG = Math.PI / 180;
 const rev = (x) => x - Math.floor(x / 360) * 360; // normalise to [0, 360)
 
+const DAY_MS = 86400000;
+/* The past is not fenced off: keep dragging and you can leave recorded history
+ * entirely. The only floor is the earliest instant a JS Date can represent. */
+const MIN_DATE = -8.64e15;
+/* No birth dates in the future. Computed at load, not hardcoded, so a
+ * long-deployed copy of the page never falls behind today's date. */
+const MAX_DATE = (() => {
+  const now = new Date();
+  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+})();
+
 /* Orbital elements as [value at epoch, change per day].
  * Angles in degrees; a in AU. Epoch = 2000 Jan 0.0 (JD 2451543.5).
  * `M[1]` doubles as the planet's mean motion in deg/day. */
@@ -42,6 +53,19 @@ const ELEMENTS = {
  * checked against Horizons. Elliptical and hyperbolic orbits differ only in
  * which anomaly equation gets solved. */
 const EPOCH_JD = 2451543.5; // JD at dn = 0
+
+/* Turn a position in the orbital plane into ecliptic longitude and the
+ * distance projected onto the ecliptic, which is what a top-down map plots. */
+function orbitalToEcliptic(el, xv, yv) {
+  const N = el.node * DEG, w = el.argp * DEG, i = el.i * DEG;
+  const cN = Math.cos(N), sN = Math.sin(N);
+  const cw = Math.cos(w), sw = Math.sin(w);
+  const ci = Math.cos(i);
+
+  const x = xv * (cN * cw - sN * sw * ci) + yv * (-cN * sw - sN * cw * ci);
+  const y = xv * (sN * cw + cN * sw * ci) + yv * (-sN * sw + cN * cw * ci);
+  return { lon: Math.atan2(y, x), r: Math.hypot(x, y) };
+}
 
 function keplerPosition(el, dn) {
   const e = el.e;
@@ -72,28 +96,70 @@ function keplerPosition(el, dn) {
     yv = A * Math.sqrt(e * e - 1) * Math.sinh(H);
   }
 
-  const N = el.node * DEG, w = el.argp * DEG, i = el.i * DEG;
-  const cN = Math.cos(N), sN = Math.sin(N);
-  const cw = Math.cos(w), sw = Math.sin(w);
-  const ci = Math.cos(i), si = Math.sin(i);
-
-  const x = xv * (cN * cw - sN * sw * ci) + yv * (-cN * sw - sN * cw * ci);
-  const y = xv * (sN * cw + cN * sw * ci) + yv * (-sN * sw + cN * cw * ci);
-
-  // Top-down map: the plotted radius is the distance projected onto the
-  // ecliptic, which is what x and y already are.
-  return { lon: Math.atan2(y, x), r: Math.hypot(x, y) };
+  return orbitalToEcliptic(el, xv, yv);
 }
 
 const kepler = (el) => (dn) => keplerPosition(el, dn);
+
+/* A body defined by elements: where it is, and the shape to draw for it. */
+const orbiter = (el) => ({ at: kepler(el), shape: el });
+
+/* ---- Flown paths ------------------------------------------------------- */
+
+/* A spacecraft's track is a list of sampled positions, not an orbit. Between
+ * samples, interpolate; past the last one, the three craft still coasting are
+ * handed to their escape hyperbola, which by then is exactly what they follow.
+ * (Cassini has no `after`: there is nothing after the Grand Finale.) */
+function track(rows, after) {
+  const pts = rows.map(([date, x, y]) => {
+    const [Y, M, D] = date.split("-").map(Number);
+    return { dn: dayNumber(Date.UTC(Y, M - 1, D)), x, y };
+  });
+  const last = pts[pts.length - 1];
+
+  const at = (dn) => {
+    if (dn >= last.dn) {
+      if (after) return keplerPosition(after, dn);
+      return { lon: Math.atan2(last.y, last.x), r: Math.hypot(last.x, last.y) };
+    }
+    if (dn <= pts[0].dn) return { lon: Math.atan2(pts[0].y, pts[0].x), r: Math.hypot(pts[0].x, pts[0].y) };
+
+    let lo = 0, hi = pts.length - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (pts[mid].dn <= dn) lo = mid; else hi = mid;
+    }
+    const t = (dn - pts[lo].dn) / (pts[hi].dn - pts[lo].dn);
+    const x = pts[lo].x + t * (pts[hi].x - pts[lo].x);
+    const y = pts[lo].y + t * (pts[hi].y - pts[lo].y);
+    return { lon: Math.atan2(y, x), r: Math.hypot(x, y) };
+  };
+
+  return { at, flown: pts, escape: after, launched: Date.UTC(
+    ...rows[0][0].split("-").map((v, k) => (k === 1 ? Number(v) - 1 : Number(v)))) };
+}
 
 /* Halley is the one body here that two-body motion cannot carry across
  * centuries: Jupiter and Saturn shove its period around between 74 and 79
  * years, so propagating the 1986 solution back to 1910 lands the comet three
  * months out — right place on the ellipse, wrong date. JPL fits each
  * apparition separately, so we carry one element set per apparition and use
- * whichever perihelion is nearest the date being shown. */
+ * whichever perihelion is nearest the date being shown.
+ *
+ * These are every apparition JPL has: its ephemeris for Halley begins on
+ * 11 December 1599. The comet is drawn for any date all the same, but before
+ * 1599 or after 2061 it is running on the nearest fitted apparition, so it is
+ * on the right ellipse with a position along it that drifts by roughly a
+ * month per revolution it has to reach back. */
 const HALLEY = [
+  { e: 0.9674977091, q: 0.5836439286, i: 162.9011472, node: 53.77027973,
+    argp: 107.5493930, Tp: 2308304.305119355, n: 0.01295248431 }, // 1607
+  { e: 0.9679305306, q: 0.5826229334, i: 162.2646826, node: 55.56827879,
+    argp: 109.2232882, Tp: 2335655.814491715, n: 0.01272800605 }, // 1682
+  { e: 0.9676861751, q: 0.5844676378, i: 162.3724021, node: 57.24579129,
+    argp: 110.7091000, Tp: 2363592.550779899, n: 0.01281285528 }, // 1759
+  { e: 0.9673945533, q: 0.5865642584, i: 162.2587307, node: 57.51837004,
+    argp: 110.7042249, Tp: 2391598.939786560, n: 0.01291712648 }, // 1835
   { e: 0.9672960499, q: 0.5872100478, i: 162.2187984, node: 58.56208299,
     argp: 111.7366941, Tp: 2418781.678417111, n: 0.01295430667 }, // 1910
   { e: 0.9672792272, q: 0.5871034488, i: 162.2422243, node: 58.85993641,
@@ -156,11 +222,10 @@ const PLANETS = [
   { name: "Mars",    ring: 138, size: 3.4, color: "#e07a4d" },
   // A planet from Piazzi's discovery until the asteroid belt filled up around
   // it. Elements osculating at 1825, the middle of that half-century.
-  { name: "Ceres",   size: 2.8, color: "#a9a49a",
-    at: kepler({ e: 0.078597801, q: 2.549992651, i: 10.63160989,
+  { name: "Ceres",   size: 2.8, color: "#a9a49a", motion: 0.2140767717,
+    ...orbiter({ e: 0.078597801, q: 2.549992651, i: 10.63160989,
                  node: 83.19164578, argp: 65.30507952,
                  Tp: 2387588.515790960, n: 0.2140767717 }),
-    period: 1681.64, motion: 0.2140767717,
     from: Date.UTC(1801, 0, 1), until: Date.UTC(1852, 0, 1) },
   { name: "Jupiter", ring: 186, size: 9.0, color: "#d9a679" },
   { name: "Saturn",  ring: 226, size: 7.6, color: "#e8d19b" },
@@ -172,11 +237,10 @@ const PLANETS = [
   // Elements osculating at 1968, the middle of that window. Plotted at its
   // true distance, so with e = 0.25 it swings from 49 AU down inside Neptune's
   // ring at perihelion in 1989, exactly as it does in the sky.
-  { name: "Pluto",   size: 3.2, color: "#cbb6a4",
-    at: kepler({ e: 0.2522245672, q: 29.62583757, i: 17.06324778,
+  { name: "Pluto",   size: 3.2, color: "#cbb6a4", motion: 0.003952345558,
+    ...orbiter({ e: 0.2522245672, q: 29.62583757, i: 17.06324778,
                  node: 109.8122650, argp: 114.3469360,
                  Tp: 2447814.188036249, n: 0.003952345558 }),
-    period: 91085.153, motion: 0.003952345558,
     from: Date.UTC(1930, 1, 18), until: Date.UTC(2006, 7, 24) },
 ];
 
@@ -193,93 +257,74 @@ function bodyPosition(p, dn) {
 /* ---- Extras: things that are not planets, shown only full screen -------
  *
  * These would swamp the little popup, so they only appear once the sky has
- * room. Each is propagated from JPL Horizons osculating elements over a window
- * where two-body motion holds — after a spacecraft's last gravity assist, or
- * around a comet's own apparition — and each was checked against Horizons.
+ * room. The comet and the interstellar object are propagated from JPL Horizons
+ * osculating elements; the spacecraft are drawn from sampled Horizons
+ * positions, because their flown paths are sequences of gravity assists and
+ * burns that no set of elements describes. Each was checked against Horizons.
  *
- * Cassini and the cruise phases of the others are deliberately absent: their
- * paths are strings of gravity assists and burns that no closed-form orbit
- * reproduces. Cassini appears only for its years in orbit at Saturn, where
- * riding Saturn's position is accurate to far less than a pixel here.
- *
- * An orbit line is only drawn where the whole orbit is real: a closed ellipse
- * for the comet, the complete hyperbolic branch for the interstellar visitor.
- * The spacecraft get none. Their escape hyperbola only describes them after
- * their last planetary encounter — run it backwards and it draws a journey
- * they never made — so there is no full orbit to draw, and half of one would
- * claim more than is known. */
+ * A line is only drawn where the whole path is real: a closed ellipse for the
+ * comet, the complete hyperbolic branch for the interstellar visitor, and for
+ * a craft every sample from launch onwards. */
 const EXTRAS = [
-  // 1P/Halley. The dot uses the apparition nearest the date; the drawn ellipse
-  // is one revolution of the 1986 solution, so it doesn't kink where the
-  // element sets hand over.
+  // 1P/Halley: always in the sky, and always has been.
   { name: "Halley", size: 2.0, color: "#8ee0c0",
-    at: halleyPosition, pathAt: kepler(HALLEY[1]), period: 27760.996,
-    from: Date.UTC(1900, 0, 1), until: Date.UTC(2100, 0, 1) },
+    at: halleyPosition, shape: HALLEY[5] },
 
   // 3I/ATLAS, the third known interstellar object: hyperbolic, e = 6.14, so it
   // crosses once and never returns. Its whole trajectory is real and
   // unperturbed, so the drawn line runs the entire branch — in from beyond the
   // frame, round the Sun, and back out — not merely the stretch since it was
   // discovered on 1 July 2025.
-  { name: "3I/ATLAS", size: 1.8, color: "#c9a2ff",
-    at: kepler(ATLAS), branch: ATLAS,
+  { name: "3I/ATLAS", size: 1.8, color: "#c9a2ff", ...orbiter(ATLAS),
     from: Date.UTC(2025, 6, 1) },
 
-  // Voyager 1 after its Titan flyby of 12 November 1980 put it on the escape
-  // hyperbola it has followed ever since.
-  { name: "Voyager 1", size: 1.6, color: "#ffd451", craft: true,
-    at: kepler({ e: 3.695530547, q: 8.670423985, i: 35.78608710,
-                 node: 179.0656404, argp: 338.0564708,
-                 Tp: 2444231.466052787, n: 0.1708480232 }),
-    from: Date.UTC(1980, 10, 13) },
+  // Launched 5 September 1977. Flown positions to 2024, then its escape
+  // hyperbola, which is exactly what it has followed since Saturn in 1980.
+  { name: "Voyager 1", size: 1.6, color: "#ffd451",
+    ...track(TRAJECTORIES["Voyager 1"], {
+      e: 3.695530547, q: 8.670423985, i: 35.78608710,
+      node: 179.0656404, argp: 338.0564708,
+      Tp: 2444231.466052787, n: 0.1708480232 }) },
 
-  // Voyager 2 after Neptune, 25 August 1989. Its orbit is steeply inclined
-  // (79°), so on this top-down map it reads much closer in than it really is.
-  { name: "Voyager 2", size: 1.6, color: "#ffb457", craft: true,
-    at: kepler({ e: 6.283315907, q: 21.24898323, i: 79.00274168,
-                 node: 101.8247301, argp: 130.0377591,
-                 Tp: 2445451.634079524, n: 0.1221959219 }),
-    from: Date.UTC(1989, 7, 26) },
+  // Launched 20 August 1977. Its orbit is steeply inclined (79°) after
+  // Neptune, so on this top-down map it reads much closer in than it is.
+  { name: "Voyager 2", size: 1.6, color: "#ffb457",
+    ...track(TRAJECTORIES["Voyager 2"], {
+      e: 6.283315907, q: 21.24898323, i: 79.00274168,
+      node: 101.8247301, argp: 130.0377591,
+      Tp: 2445451.634079524, n: 0.1221959219 }) },
 
-  // New Horizons after its Jupiter assist of 28 February 2007.
-  { name: "New Horizons", size: 1.6, color: "#7ee0a0", craft: true,
-    at: kepler({ e: 1.408801545, q: 2.305834525, i: 2.262922701,
-                 node: 226.5467691, argp: 291.4515432,
-                 Tp: 2453771.276271808, n: 0.07357506587 }),
-    from: Date.UTC(2007, 2, 1) },
+  // Launched 19 January 2006.
+  { name: "New Horizons", size: 1.6, color: "#7ee0a0",
+    ...track(TRAJECTORIES["New Horizons"], {
+      e: 1.408801545, q: 2.305834525, i: 2.262922701,
+      node: 226.5467691, argp: 291.4515432,
+      Tp: 2453771.276271808, n: 0.07357506587 }) },
 
-  // Saturn orbit insertion to the Grand Finale, 2004–2017.
-  { name: "Cassini", size: 1.6, color: "#e8d19b", craft: true, follows: "Saturn",
-    from: Date.UTC(2004, 6, 1), until: Date.UTC(2017, 8, 16) },
+  // Launched 15 October 1997, ended in Saturn's atmosphere on 15 September
+  // 2017. Nothing continues past that, so neither does it.
+  { name: "Cassini", size: 1.6, color: "#e8d19b",
+    ...track(TRAJECTORIES["Cassini"]), until: Date.UTC(2017, 8, 16) },
 ];
+
+// A craft exists from the day it launched.
+for (const p of EXTRAS) if (p.launched !== undefined) p.from = p.launched;
 
 /* Was this body a planet on the given date? */
 function isPlanetOn(p, ms) {
   return (p.from === undefined || ms >= p.from) && (p.until === undefined || ms < p.until);
 }
 
-const DAY_MS = 86400000;
-/* The past is not fenced off: keep dragging and you can leave recorded history
- * entirely. The only floor is the earliest instant a JS Date can represent. */
-const MIN_DATE = -8.64e15;
-/* No birth dates in the future. Computed at load, not hardcoded, so a
- * long-deployed copy of the page never falls behind today's date. */
-const MAX_DATE = (() => {
-  const now = new Date();
-  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-})();
-
 /* ---- Astronomy -------------------------------------------------------- */
 
-/* Schlyter day number: days since 2000 Jan 0.0, including fractional day. */
+/* Days since 2000 Jan 0.0 (JD 2451543.5), the epoch all the elements use.
+ *
+ * Taken straight from the timestamp rather than from Schlyter's integer
+ * calendar formula: that formula drops the Gregorian century rule, which
+ * costs nothing near its own era but is three days out by 1607 — and three
+ * days is ten degrees of arc for a comet rounding the Sun. */
 function dayNumber(ms) {
-  const d = new Date(ms);
-  const Y = d.getUTCFullYear(), M = d.getUTCMonth() + 1, D = d.getUTCDate();
-  const dn = 367 * Y
-    - Math.floor((7 * (Y + Math.floor((M + 9) / 12))) / 4)
-    + Math.floor((275 * M) / 9) + D - 730530;
-  const frac = (d.getUTCHours() + d.getUTCMinutes() / 60) / 24;
-  return dn + frac;
+  return ms / DAY_MS - 10956; // JD = ms/DAY_MS + 2440587.5
 }
 
 /* Heliocentric ecliptic longitude (radians) of a planet on day `dn`. */
@@ -335,42 +380,66 @@ function svgEl(tag, attrs) {
   return el;
 }
 
-/* One full revolution of a closed orbit, sampled from 1800 onwards. */
-function orbitPath(p, steps = 240) {
-  const dn0 = dayNumber(Date.UTC(1800, 0, 1));
-  const shape = p.pathAt ? { at: p.pathAt } : p;
-  let d = "";
-  for (let k = 0; k <= steps; k++) {
-    const { lon, ring } = bodyPosition(shape, dn0 + (k / steps) * p.period);
-    const x = (Math.cos(lon) * ring).toFixed(2);
-    const y = (-Math.sin(lon) * ring).toFixed(2);
-    d += (k ? "L" : "M") + x + " " + y;
-  }
-  return d + "Z";
-}
-
-/* The whole of an open orbit, which for a hyperbola means both arms out to
- * where they leave the drawing. Stepping the hyperbolic anomaly rather than
- * the date spaces the samples evenly along the curve — dates bunch absurdly
- * near perihelion and stretch to centuries out on the arms. */
+/* Orbits are drawn from their geometry, not by stepping the clock. Walking the
+ * eccentric (or hyperbolic) anomaly spaces the samples evenly along the curve;
+ * walking the date crowds them at the slow far end and skips the fast turn
+ * around perihelion, which on an orbit as lopsided as Halley's cuts the corner
+ * off the very part worth looking at. */
 const FRAME_AU = 457; // distance that lands on the edge of the full-screen frame
 
-function branchPath(el, steps = 320) {
-  const A = el.q / (el.e - 1);
-  const Hmax = Math.acosh(Math.max((FRAME_AU / A + 1) / el.e, 1.0001));
-  const nRad = el.n * DEG; // rad/day
-
+function pathFrom(points) {
   let d = "";
-  for (let k = 0; k <= steps; k++) {
-    const H = -Hmax + (2 * Hmax * k) / steps;
-    const jd = el.Tp + (el.e * Math.sinh(H) - H) / nRad; // Kepler's equation, forwards
-    const { lon, r } = keplerPosition(el, jd - EPOCH_JD);
-    const ring = ringForAU(r);
-    const x = (Math.cos(lon) * ring).toFixed(2);
-    const y = (-Math.sin(lon) * ring).toFixed(2);
-    d += (k ? "L" : "M") + x + " " + y;
+  for (let k = 0; k < points.length; k++) {
+    d += (k ? "L" : "M") + points[k][0].toFixed(2) + " " + points[k][1].toFixed(2);
   }
   return d;
+}
+
+function plot(lon, r) {
+  const ring = ringForAU(r);
+  return [Math.cos(lon) * ring, -Math.sin(lon) * ring];
+}
+
+function ellipsePath(el, steps = 400) {
+  const a = el.q / (1 - el.e);
+  const b = a * Math.sqrt(1 - el.e * el.e);
+  const pts = [];
+  for (let k = 0; k <= steps; k++) {
+    const E = (2 * Math.PI * k) / steps;
+    const { lon, r } = orbitalToEcliptic(el, a * (Math.cos(E) - el.e), b * Math.sin(E));
+    pts.push(plot(lon, r));
+  }
+  return pathFrom(pts) + "Z";
+}
+
+/* Both arms of a hyperbola, out to where they leave the drawing. */
+function branchPath(el, steps = 400) {
+  const A = el.q / (el.e - 1);
+  const B = A * Math.sqrt(el.e * el.e - 1);
+  const Hmax = Math.acosh(Math.max((FRAME_AU / A + 1) / el.e, 1.0001));
+  const pts = [];
+  for (let k = 0; k <= steps; k++) {
+    const H = -Hmax + (2 * Hmax * k) / steps;
+    const { lon, r } = orbitalToEcliptic(el, A * (el.e - Math.cosh(H)), B * Math.sinh(H));
+    pts.push(plot(lon, r));
+  }
+  return pathFrom(pts);
+}
+
+/* A flown path is just the samples, joined — plus, for a craft still going,
+ * the stretch from its last sample to today along its escape hyperbola. */
+function flownPath(p) {
+  const pts = p.flown.map((s) => plot(Math.atan2(s.y, s.x), Math.hypot(s.x, s.y)));
+  if (p.escape) {
+    const from = p.flown[p.flown.length - 1].dn;
+    const to = dayNumber(MAX_DATE);
+    const steps = 40;
+    for (let k = 1; k <= steps; k++) {
+      const { lon, r } = keplerPosition(p.escape, from + ((to - from) * k) / steps);
+      pts.push(plot(lon, r));
+    }
+  }
+  return pathFrom(pts);
 }
 
 /* One body: its orbit line, its dot, its label. Planets get a drag handle;
@@ -379,10 +448,14 @@ function buildBody(p, { draggable }) {
   const orbitParent = draggable ? orbitsG : extraOrbitsG;
   const bodyParent = draggable ? planetsG : extrasG;
 
-  // Only bodies whose entire orbit can be drawn truthfully get a line.
+  // A line is only drawn for a path that is whole and real: a closed ellipse,
+  // a complete hyperbolic branch, or every sample a craft actually flew.
+  let d = null;
+  if (p.flown) d = flownPath(p);
+  else if (p.shape) d = p.shape.e < 1 ? ellipsePath(p.shape) : branchPath(p.shape);
+
   let orbit = null;
-  if (p.period) orbit = svgEl("path", { class: "orbit", "data-orbit": p.name, d: orbitPath(p) });
-  else if (p.branch) orbit = svgEl("path", { class: "orbit", "data-orbit": p.name, d: branchPath(p.branch) });
+  if (d) orbit = svgEl("path", { class: p.flown ? "orbit flown" : "orbit", "data-orbit": p.name, d });
   else if (p.ring) orbit = svgEl("circle", { class: "orbit", "data-orbit": p.name, cx: 0, cy: 0, r: p.ring });
   if (orbit) orbitParent.appendChild(orbit);
 
@@ -432,10 +505,7 @@ function render() {
     orbit?.classList.toggle("gone", !here);
     if (!here) continue;
 
-    // Cassini has no orbit of its own here: for its years at Saturn, Saturn's
-    // position is its position to well under a pixel.
-    const src = p.follows ? PLANETS.find((q) => q.name === p.follows) : p;
-    const { lon, ring } = bodyPosition(src, dn);
+    const { lon, ring } = bodyPosition(p, dn);
     const x = Math.cos(lon) * ring;
     const y = -Math.sin(lon) * ring; // SVG y grows downward
     group.querySelector(".planet-hit").setAttribute("cx", x.toFixed(2));
