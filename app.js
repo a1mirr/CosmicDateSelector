@@ -106,38 +106,90 @@ const orbiter = (el) => ({ at: kepler(el), shape: el });
 
 /* ---- Flown paths ------------------------------------------------------- */
 
-/* A spacecraft's track is a list of sampled positions, not an orbit. Between
- * samples, interpolate; past the last one, the three craft still coasting are
- * handed to their escape hyperbola, which by then is exactly what they follow.
- * (Cassini has no `after`: there is nothing after the Grand Finale.) */
+/* A spacecraft's track is a list of sampled positions, not an orbit. Chords
+ * between samples would be visibly faceted — and wrong through a flyby, where
+ * the real path is a curve — so the samples are joined by a cubic Hermite
+ * spline instead, with each tangent taken from the neighbours on either side.
+ * The spacing is deliberately uneven (days through the inner system, years
+ * out in the coast), so the spline is parameterised by date rather than by
+ * sample index, which keeps a long segment from overshooting a short one.
+ *
+ * Past the last sample, the craft still coasting are handed to their escape
+ * hyperbola, which by then is exactly what they follow. (Cassini has no
+ * `after`: there is nothing after the Grand Finale.) */
 function track(rows, after) {
   const pts = rows.map(([date, x, y]) => {
     const [Y, M, D] = date.split("-").map(Number);
     return { dn: dayNumber(Date.UTC(Y, M - 1, D)), x, y };
   });
-  const last = pts[pts.length - 1];
+
+  /* Tangents from the neighbours on either side, then limited against the
+   * secants they sit between. A gravity assist is very nearly a kink, and an
+   * unlimited spline answers a kink by bulging past it — drawing a swerve the
+   * craft never flew. */
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(i - 1, 0)], b = pts[Math.min(i + 1, pts.length - 1)];
+    const dt = b.dn - a.dn;
+    pts[i].mx = dt ? (b.x - a.x) / dt : 0; // AU per day
+    pts[i].my = dt ? (b.y - a.y) / dt : 0;
+  }
+  const limit = (m, left, right) => {
+    if (left * right <= 0) return 0; // a turning point: flatten rather than bulge
+    const cap = 3 * Math.min(Math.abs(left), Math.abs(right));
+    return Math.sign(m) * Math.min(Math.abs(m), cap);
+  };
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p = pts[i], a = pts[i - 1], b = pts[i + 1];
+    const hl = p.dn - a.dn, hr = b.dn - p.dn;
+    p.mx = limit(p.mx, (p.x - a.x) / hl, (b.x - p.x) / hr);
+    p.my = limit(p.my, (p.y - a.y) / hl, (b.y - p.y) / hr);
+  }
+  const first = pts[0], last = pts[pts.length - 1];
+
+  /* Position within segment i, at fraction s of the way across it. */
+  function span(i, s) {
+    const p = pts[i], q = pts[i + 1], h = q.dn - p.dn;
+    const s2 = s * s, s3 = s2 * s;
+    const h00 = 2 * s3 - 3 * s2 + 1, h10 = s3 - 2 * s2 + s;
+    const h01 = -2 * s3 + 3 * s2, h11 = s3 - s2;
+    return {
+      x: h00 * p.x + h10 * h * p.mx + h01 * q.x + h11 * h * q.mx,
+      y: h00 * p.y + h10 * h * p.my + h01 * q.y + h11 * h * q.my,
+    };
+  }
 
   const at = (dn) => {
     if (dn >= last.dn) {
       if (after) return keplerPosition(after, dn);
-      return { lon: Math.atan2(last.y, last.x), r: Math.hypot(last.x, last.y) };
+      return polar(last);
     }
-    if (dn <= pts[0].dn) return { lon: Math.atan2(pts[0].y, pts[0].x), r: Math.hypot(pts[0].x, pts[0].y) };
+    if (dn <= first.dn) return polar(first);
 
     let lo = 0, hi = pts.length - 1;
     while (hi - lo > 1) {
       const mid = (lo + hi) >> 1;
       if (pts[mid].dn <= dn) lo = mid; else hi = mid;
     }
-    const t = (dn - pts[lo].dn) / (pts[hi].dn - pts[lo].dn);
-    const x = pts[lo].x + t * (pts[hi].x - pts[lo].x);
-    const y = pts[lo].y + t * (pts[hi].y - pts[lo].y);
-    return { lon: Math.atan2(y, x), r: Math.hypot(x, y) };
+    return polar(span(lo, (dn - pts[lo].dn) / (pts[hi].dn - pts[lo].dn)));
   };
 
-  return { at, flown: pts, escape: after, launched: Date.UTC(
+  /* The flown path, walked finely enough that neither the spline's curvature
+   * nor the map's squeezed radial scale shows as a corner. */
+  const curve = () => {
+    const out = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const steps = Math.min(Math.max(Math.round((pts[i + 1].dn - pts[i].dn) / 8), 6), 60);
+      for (let k = 0; k < steps; k++) out.push(span(i, k / steps));
+    }
+    out.push({ x: last.x, y: last.y });
+    return out;
+  };
+
+  return { at, curve, lastFlown: last.dn, escape: after, launched: Date.UTC(
     ...rows[0][0].split("-").map((v, k) => (k === 1 ? Number(v) - 1 : Number(v)))) };
 }
+
+const polar = (p) => ({ lon: Math.atan2(p.y, p.x), r: Math.hypot(p.x, p.y) });
 
 /* Halley is the one body here that two-body motion cannot carry across
  * centuries: Jupiter and Saturn shove its period around between 74 and 79
@@ -400,7 +452,7 @@ function plot(lon, r) {
   return [Math.cos(lon) * ring, -Math.sin(lon) * ring];
 }
 
-function ellipsePath(el, steps = 400) {
+function ellipsePath(el, steps = 720) {
   const a = el.q / (1 - el.e);
   const b = a * Math.sqrt(1 - el.e * el.e);
   const pts = [];
@@ -413,7 +465,7 @@ function ellipsePath(el, steps = 400) {
 }
 
 /* Both arms of a hyperbola, out to where they leave the drawing. */
-function branchPath(el, steps = 400) {
+function branchPath(el, steps = 600) {
   const A = el.q / (el.e - 1);
   const B = A * Math.sqrt(el.e * el.e - 1);
   const Hmax = Math.acosh(Math.max((FRAME_AU / A + 1) / el.e, 1.0001));
@@ -426,16 +478,16 @@ function branchPath(el, steps = 400) {
   return pathFrom(pts);
 }
 
-/* A flown path is just the samples, joined — plus, for a craft still going,
- * the stretch from its last sample to today along its escape hyperbola. */
+/* A flown path: the spline through everywhere it has been, plus — for a craft
+ * still going — the stretch from its last sample to today along the escape
+ * hyperbola it is now on. */
 function flownPath(p) {
-  const pts = p.flown.map((s) => plot(Math.atan2(s.y, s.x), Math.hypot(s.x, s.y)));
+  const pts = p.curve().map((s) => plot(Math.atan2(s.y, s.x), Math.hypot(s.x, s.y)));
   if (p.escape) {
-    const from = p.flown[p.flown.length - 1].dn;
     const to = dayNumber(MAX_DATE);
-    const steps = 40;
+    const steps = 80;
     for (let k = 1; k <= steps; k++) {
-      const { lon, r } = keplerPosition(p.escape, from + ((to - from) * k) / steps);
+      const { lon, r } = keplerPosition(p.escape, p.lastFlown + ((to - p.lastFlown) * k) / steps);
       pts.push(plot(lon, r));
     }
   }
@@ -451,11 +503,11 @@ function buildBody(p, { draggable }) {
   // A line is only drawn for a path that is whole and real: a closed ellipse,
   // a complete hyperbolic branch, or every sample a craft actually flew.
   let d = null;
-  if (p.flown) d = flownPath(p);
+  if (p.curve) d = flownPath(p);
   else if (p.shape) d = p.shape.e < 1 ? ellipsePath(p.shape) : branchPath(p.shape);
 
   let orbit = null;
-  if (d) orbit = svgEl("path", { class: p.flown ? "orbit flown" : "orbit", "data-orbit": p.name, d });
+  if (d) orbit = svgEl("path", { class: p.curve ? "orbit flown" : "orbit", "data-orbit": p.name, d });
   else if (p.ring) orbit = svgEl("circle", { class: "orbit", "data-orbit": p.name, cx: 0, cy: 0, r: p.ring });
   if (orbit) orbitParent.appendChild(orbit);
 
