@@ -45,7 +45,12 @@ const PLANETS = [
 
 const DAY_MS = 86400000;
 const MIN_DATE = Date.UTC(1900, 0, 1);
-const MAX_DATE = Date.UTC(2026, 6, 6); // no birth dates in the future (today)
+/* No birth dates in the future. Computed at load, not hardcoded, so a
+ * long-deployed copy of the page never falls behind today's date. */
+const MAX_DATE = (() => {
+  const now = new Date();
+  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+})();
 
 /* ---- Astronomy -------------------------------------------------------- */
 
@@ -97,9 +102,11 @@ const svg = document.getElementById("sky");
 const orbitsG = document.getElementById("orbits");
 const planetsG = document.getElementById("planets");
 const starsG = document.getElementById("stars");
-const readout = document.getElementById("dateReadout");
-const dateInput = document.getElementById("dateInput");
-const draggingInfo = document.getElementById("draggingInfo");
+const dateInput = document.getElementById("dateInput"); // hidden, carries the form value
+const dateText = document.getElementById("dateText");
+const dateAnchor = document.getElementById("dateAnchor");
+const dateBox = document.getElementById("dateBox");
+const picker = document.getElementById("picker");
 const nodes = {}; // name -> { group, hit, body }
 
 function svgEl(tag, attrs) {
@@ -126,7 +133,8 @@ function buildScene() {
     orbitsG.appendChild(svgEl("circle", { class: "orbit", "data-orbit": p.name, cx: 0, cy: 0, r: p.ring }));
 
     const g = svgEl("g", { class: "planet-group", "data-planet": p.name });
-    const hit = svgEl("circle", { class: "planet-hit", r: Math.max(p.size + 8, 12) });
+    // Generous grab radius: the popup shows this 640-unit scene at ~340px.
+    const hit = svgEl("circle", { class: "planet-hit", r: Math.max(p.size + 12, 18) });
     const body = svgEl("circle", { class: "planet-body", r: p.size, fill: p.color });
     const label = svgEl("text", { class: "planet-label", "text-anchor": "middle", dy: -p.size - 5 });
     label.textContent = p.name;
@@ -157,12 +165,59 @@ function render() {
 
 function updateDateUI() {
   const d = new Date(currentMs);
-  readout.textContent = d.toLocaleDateString("en-US", {
-    year: "numeric", month: "long", day: "numeric", timeZone: "UTC",
+  dateInput.value = d.toISOString().slice(0, 10);
+  dateText.textContent = d.toLocaleDateString("en-US", {
+    year: "numeric", month: "2-digit", day: "2-digit", timeZone: "UTC",
   });
-  const iso = d.toISOString().slice(0, 10);
-  if (dateInput.value !== iso) dateInput.value = iso;
 }
+
+/* ---- The dropdown: hover to open, drag to pick ------------------------ */
+
+let planetDragging = false; // set while a planet is being dragged
+let closeTimer = null;
+let closeWhenDragEnds = false;
+
+function openPicker() {
+  clearTimeout(closeTimer);
+  closeWhenDragEnds = false;
+  picker.hidden = false;
+  dateBox.classList.add("open");
+  dateBox.setAttribute("aria-expanded", "true");
+}
+
+function closePicker() {
+  clearTimeout(closeTimer);
+  picker.hidden = true;
+  dateBox.classList.remove("open");
+  dateBox.setAttribute("aria-expanded", "false");
+}
+
+/* A short grace period so crossing the gap between field and popup — or
+ * slipping a few pixels off a planet mid-drag — doesn't dismiss it. */
+function scheduleClose() {
+  if (planetDragging) { closeWhenDragEnds = true; return; }
+  clearTimeout(closeTimer);
+  closeTimer = setTimeout(closePicker, 180);
+}
+
+// The popup lives inside the anchor, so hovering it keeps the anchor hovered.
+dateAnchor.addEventListener("pointerenter", openPicker);
+dateAnchor.addEventListener("pointerleave", scheduleClose);
+
+// Hover isn't available on touch, and the field should work from the keyboard.
+dateBox.addEventListener("click", () => (picker.hidden ? openPicker() : closePicker()));
+dateBox.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    picker.hidden ? openPicker() : closePicker();
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !picker.hidden) { closePicker(); dateBox.focus(); }
+});
+document.addEventListener("pointerdown", (e) => {
+  if (!picker.hidden && !dateAnchor.contains(e.target)) closePicker();
+});
 
 /* ---- Dragging: angle delta -> date delta ------------------------------ */
 
@@ -186,13 +241,13 @@ function attachDrag(planet, group) {
   const onDown = (evt) => {
     evt.preventDefault();
     dragging = true;
+    planetDragging = true;
     pointerId = evt.pointerId;
     lastAngle = pointerAngle(evt);
     group.classList.add("active");
     svg.classList.add("grabbing");
     document.querySelector(`.orbit[data-orbit="${planet.name}"]`).classList.add("active");
     group.setPointerCapture?.(pointerId);
-    showResolution(planet, meanMotion);
   };
 
   const onMove = (evt) => {
@@ -218,6 +273,8 @@ function attachDrag(planet, group) {
   const onUp = (evt) => {
     if (!dragging) return;
     dragging = false;
+    planetDragging = false;
+    if (closeWhenDragEnds) scheduleClose(); // pointer wandered off during the drag
     group.classList.remove("active");
     svg.classList.remove("grabbing");
     document.querySelector(`.orbit[data-orbit="${planet.name}"]`).classList.remove("active");
@@ -231,47 +288,16 @@ function attachDrag(planet, group) {
   group.addEventListener("pointercancel", onUp);
 }
 
-function showResolution(planet, meanMotion) {
-  const daysPerDeg = Math.abs(1 / meanMotion);
-  let scale;
-  if (daysPerDeg < 1) scale = `${(daysPerDeg * 24).toFixed(1)} hours`;
-  else if (daysPerDeg < 60) scale = `${daysPerDeg.toFixed(1)} days`;
-  else scale = `${(daysPerDeg / 365.25).toFixed(2)} years`;
-  draggingInfo.innerHTML =
-    `Dragging <b>${planet.name}</b> — about ${scale} per degree of orbit.`;
-}
-
-/* ---- Manual date entry stays in sync ---------------------------------- */
-
-dateInput.min = new Date(MIN_DATE).toISOString().slice(0, 10);
-dateInput.max = new Date(MAX_DATE).toISOString().slice(0, 10);
-dateInput.addEventListener("change", () => {
-  const parts = dateInput.value.split("-").map(Number);
-  if (parts.length === 3 && !parts.some(Number.isNaN)) {
-    let ms = Date.UTC(parts[0], parts[1] - 1, parts[2]);
-    ms = Math.min(Math.max(ms, MIN_DATE), MAX_DATE);
-    currentMs = ms;
-    render();
-  }
-});
-
 /* ---- Form -------------------------------------------------------------- */
 
 const form = document.getElementById("register");
 const result = document.getElementById("result");
 form.addEventListener("submit", (e) => {
   e.preventDefault();
-  const name = document.getElementById("name").value.trim();
-  const pass = document.getElementById("password").value;
-  if (!name || !pass) {
-    result.className = "result error";
-    result.textContent = "Please fill in your name and password.";
-    return;
-  }
   const d = new Date(currentMs).toLocaleDateString("en-US",
     { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" });
   result.className = "result";
-  result.textContent = `Welcome, ${name}! Born ${d}. (Dummy sign-up — nothing was sent.)`;
+  result.textContent = `Born ${d}. (Dummy sign-up — nothing was sent.)`;
 });
 
 /* ---- Go ---------------------------------------------------------------- */

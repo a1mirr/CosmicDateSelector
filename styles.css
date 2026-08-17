@@ -1,6 +1,5 @@
 :root {
   --bg: #05060d;
-  --bg-2: #0b1024;
   --panel: rgba(16, 20, 40, 0.72);
   --ink: #e8ecff;
   --muted: #8a93c4;
@@ -22,29 +21,101 @@ html, body {
   font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
+/* ---------- Form ---------- */
 .shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
-  gap: 8px;
-  align-items: stretch;
+  place-items: center;
+  padding: 32px 20px;
+}
+.card {
+  width: 100%;
+  max-width: 400px;
+  padding: 32px;
+  background: var(--panel);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.45);
+}
+h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.5px; }
+.sub { margin: 0 0 28px; color: var(--muted); font-size: 14px; }
+
+.field { display: block; margin-bottom: 20px; }
+.field-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
 }
 
-/* ---------- Cosmos ---------- */
-.cosmos {
-  position: relative;
+/* ---------- Date field ---------- */
+.date-anchor { position: relative; }
+
+/* Read-only display of whatever the planets currently say: styled like a date
+ * input, but it accepts no typing — the popup below is the only input. */
+.datebox {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  padding: 24px;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.datebox:hover,
+.datebox:focus-visible,
+.datebox.open {
+  outline: none;
+  border-color: var(--accent-2);
+  box-shadow: 0 0 0 3px rgba(110, 168, 255, 0.18);
+}
+.cal-icon {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+/* ---------- The unusual dropdown ---------- */
+.picker {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(340px, calc(100vw - 48px));
+  aspect-ratio: 1 / 1;
+  padding: 6px;
+  background: #080b1a;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   overflow: hidden;
 }
-.cosmos-inner {
-  width: min(78vh, 100%);
-  aspect-ratio: 1 / 1;
-  max-width: 720px;
+/* Short or narrow viewports can't fit a 340px square below the field, and an
+ * absolutely-positioned popup can't grow the page to make room — so centre it
+ * over the form instead of dropping it down. */
+@media (max-height: 820px), (max-width: 460px) {
+  .picker {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(340px, calc(100vw - 32px));
+  }
 }
+
 #sky {
   width: 100%;
   height: 100%;
@@ -54,12 +125,13 @@ html, body {
 }
 #sky.grabbing { cursor: grabbing; }
 
+/* Stroke widths and text are sized for the popup's ~0.53 downscale. */
 .orbit {
   fill: none;
   stroke: var(--line);
-  stroke-width: 0.6;
+  stroke-width: 1.2;
 }
-.orbit.active { stroke: rgba(110, 168, 255, 0.5); stroke-width: 1; }
+.orbit.active { stroke: rgba(110, 168, 255, 0.55); stroke-width: 2; }
 
 .planet-hit {
   fill: transparent;
@@ -68,8 +140,8 @@ html, body {
 .planet-body { pointer-events: none; }
 .planet-label {
   pointer-events: none;
-  fill: var(--muted);
-  font-size: 9px;
+  fill: var(--ink);
+  font-size: 15px;
   font-family: inherit;
   opacity: 0;
   transition: opacity 0.15s ease;
@@ -79,81 +151,7 @@ html, body {
 
 #sun { filter: drop-shadow(0 0 12px rgba(255, 180, 40, 0.7)); }
 
-.hint {
-  margin-top: 16px;
-  max-width: 460px;
-  text-align: center;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-/* ---------- Panel ---------- */
-.panel {
-  display: flex;
-  align-items: center;
-  padding: 32px;
-  background: var(--panel);
-  backdrop-filter: blur(14px);
-  border-left: 1px solid var(--line);
-}
-form {
-  width: 100%;
-  max-width: 380px;
-  margin: 0 auto;
-}
-h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.5px; }
-.sub { margin: 0 0 28px; color: var(--muted); font-size: 14px; }
-
-.field { display: block; margin-bottom: 20px; }
-.field > span {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-}
-input[type="text"],
-input[type="password"],
-input[type="date"] {
-  width: 100%;
-  padding: 12px 14px;
-  background: rgba(0, 0, 0, 0.28);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: var(--ink);
-  font-size: 15px;
-  font-family: inherit;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-input:focus {
-  outline: none;
-  border-color: var(--accent-2);
-  box-shadow: 0 0 0 3px rgba(110, 168, 255, 0.18);
-}
-input[type="date"] { color-scheme: dark; }
-
-.birthdate {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.readout {
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-  color: var(--accent);
-  font-variant-numeric: tabular-nums;
-}
-.dragging {
-  display: block;
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 12px;
-  min-height: 16px;
-}
-.dragging b { color: var(--accent-2); }
-
+/* ---------- Submit ---------- */
 .cta {
   width: 100%;
   margin-top: 8px;
@@ -178,9 +176,3 @@ input[type="date"] { color-scheme: dark; }
   color: #7ee0a0;
 }
 .result.error { color: #ff8f8f; }
-
-@media (max-width: 860px) {
-  .shell { grid-template-columns: 1fr; }
-  .panel { border-left: none; border-top: 1px solid var(--line); }
-  .cosmos-inner { width: min(92vw, 520px); }
-}

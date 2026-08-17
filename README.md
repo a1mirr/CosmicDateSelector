@@ -1,9 +1,12 @@
 # Cosmic Date Selector
 
-A dummy registration page (name, password, birth date) where the **birth-date
-picker is a working model of the Solar System**. Every date corresponds to a
-unique arrangement of the planets, and you set your birth date by **dragging any
-planet along its orbit**.
+A dummy registration page with one field — a birth date — whose **date picker is
+a working model of the Solar System**. Hover the field and the planets drop open
+where a calendar would be. Every date corresponds to a unique arrangement of the
+planets, and you set your birth date by **dragging any planet along its orbit**.
+
+The field itself takes no input: there is no calendar and nothing to type into,
+so the sky is the only way to answer the question.
 
 Because each planet has a different orbital period, the planet you grab sets the
 resolution:
@@ -49,6 +52,6 @@ verbatim.
 
 ## Files
 
-- `index.html` — form + SVG sky
+- `index.html` — form + the SVG sky that serves as its date picker
 - `styles.css` — layout and theme
 - `app.js` — orbital-mechanics engine, rendering, and drag-to-scrub-date logic

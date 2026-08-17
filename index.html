@@ -8,61 +8,55 @@
 </head>
 <body>
   <main class="shell">
-    <section class="cosmos" aria-label="Solar system date selector">
-      <div class="cosmos-inner">
-        <svg id="sky" viewBox="-320 -320 640 640" role="img"
-             aria-label="Top-down model of the Solar System. Drag any planet along its orbit to change the birth date.">
-          <defs>
-            <radialGradient id="sunGrad" cx="50%" cy="50%" r="50%">
-              <stop offset="0%"  stop-color="#fff7d6" />
-              <stop offset="35%" stop-color="#ffd451" />
-              <stop offset="75%" stop-color="#ff9b21" />
-              <stop offset="100%" stop-color="#ff6a00" stop-opacity="0.15" />
-            </radialGradient>
-            <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9" />
-              <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
-            </radialGradient>
-          </defs>
-          <g id="stars"></g>
-          <g id="orbits"></g>
-          <circle id="sun" cx="0" cy="0" r="16" fill="url(#sunGrad)" />
-          <circle cx="0" cy="0" r="34" fill="url(#glow)" opacity="0.5" />
-          <g id="planets"></g>
-        </svg>
-      </div>
-      <p class="hint" id="hint">Drag any planet around its orbit to travel through time.
-        Outer planets move years per turn; Mercury fine-tunes to the day.</p>
-    </section>
+    <form class="card" id="register" novalidate>
+      <h1>Create account</h1>
+      <p class="sub">Sign up the old-fashioned, astronomically-correct way.</p>
 
-    <section class="panel">
-      <form id="register" novalidate>
-        <h1>Create account</h1>
-        <p class="sub">Sign up the old-fashioned, astronomically-correct way.</p>
+      <div class="field">
+        <span class="field-label">Birth date</span>
 
-        <label class="field">
-          <span>Name</span>
-          <input type="text" id="name" name="name" autocomplete="name" placeholder="Ada Lovelace" required />
-        </label>
-
-        <label class="field">
-          <span>Password</span>
-          <input type="password" id="password" name="password" autocomplete="new-password" placeholder="••••••••" required />
-        </label>
-
-        <div class="field">
-          <span>Birth date</span>
-          <div class="birthdate">
-            <output id="dateReadout" class="readout">—</output>
-            <input type="date" id="dateInput" name="birthdate" />
+        <!-- Ordinary-looking date field. Hovering it drops open the Solar
+             System instead of a calendar; that popup is the only way to set
+             the value, so the field itself takes no input. -->
+        <div class="date-anchor" id="dateAnchor">
+          <div class="datebox" id="dateBox" tabindex="0" role="button"
+               aria-haspopup="dialog" aria-expanded="false" aria-controls="picker">
+            <span id="dateText">—</span>
+            <svg class="cal-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="16" rx="2" />
+              <path d="M3 10h18M8 3v4M16 3v4" />
+            </svg>
           </div>
-          <small class="dragging" id="draggingInfo">Grab a planet to set your birth date.</small>
+
+          <div class="picker" id="picker" role="dialog" aria-label="Solar system date selector" hidden>
+            <svg id="sky" viewBox="-320 -320 640 640">
+              <defs>
+                <radialGradient id="sunGrad" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%"  stop-color="#fff7d6" />
+                  <stop offset="35%" stop-color="#ffd451" />
+                  <stop offset="75%" stop-color="#ff9b21" />
+                  <stop offset="100%" stop-color="#ff6a00" stop-opacity="0.15" />
+                </radialGradient>
+                <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9" />
+                  <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+                </radialGradient>
+              </defs>
+              <g id="stars"></g>
+              <g id="orbits"></g>
+              <circle id="sun" cx="0" cy="0" r="16" fill="url(#sunGrad)" />
+              <circle cx="0" cy="0" r="34" fill="url(#glow)" opacity="0.5" />
+              <g id="planets"></g>
+            </svg>
+          </div>
         </div>
 
-        <button type="submit" class="cta">Register</button>
-        <p class="result" id="result" role="status" aria-live="polite"></p>
-      </form>
-    </section>
+        <input type="hidden" id="dateInput" name="birthdate" />
+      </div>
+
+      <button type="submit" class="cta">Register</button>
+      <p class="result" id="result" role="status" aria-live="polite"></p>
+    </form>
   </main>
 
   <script src="app.js"></script>
