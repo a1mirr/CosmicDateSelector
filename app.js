@@ -27,24 +27,67 @@ const ELEMENTS = {
   Saturn:  { N:[113.6634,2.38980e-5],i:[2.4886,-1.081e-7],w:[339.3939,2.97661e-5],a:[9.55475,0],        e:[0.055546,-9.499e-9],M:[316.9670,0.0334442282] },
   Uranus:  { N:[74.0005,1.3978e-5],  i:[0.7733,1.9e-8],  w:[96.6612,3.0565e-5],  a:[19.18171,-1.55e-8], e:[0.047318,7.45e-9],  M:[142.5905,0.011725806] },
   Neptune: { N:[131.7806,3.0173e-5], i:[1.7700,-2.55e-7],w:[272.8461,-6.027e-6], a:[30.05826,3.313e-8], e:[0.008606,2.15e-9],  M:[260.2471,0.005995147] },
+  /* Approximate J2000 elements, shifted to the epoch above. Ceres only ever
+   * shows for its half-century as a planet, and it rides a fixed ring, so this
+   * is close enough for the part of it you can see. */
+  Ceres:   { N:[80.3930,0],          i:[10.5834,0],      w:[73.1187,0],          a:[2.76580,0],         e:[0.079340,0],        M:[188.9540,0.2141] },
 };
+
+/* Pluto has no simple Keplerian fit, so Schlyter gives it a periodic series
+ * instead — valid 1800–2100, which comfortably covers the 1930–2006 window
+ * where Pluto is a planet and therefore visible at all. */
+const PLUTO_MOTION = 0.003968789; // deg/day, the series' mean argument rate
+
+function plutoLongitude(dn) {
+  const S = (50.03 + 0.033459652 * dn) * DEG;
+  const P = (238.95 + PLUTO_MOTION * dn) * DEG;
+  const lon = 238.9508 + 0.00400703 * dn
+    - 19.799 * Math.sin(P)       + 19.848 * Math.cos(P)
+    +  0.897 * Math.sin(2 * P)   -  4.956 * Math.cos(2 * P)
+    +  0.610 * Math.sin(3 * P)   +  1.211 * Math.cos(3 * P)
+    -  0.341 * Math.sin(4 * P)   -  0.190 * Math.cos(4 * P)
+    +  0.128 * Math.sin(5 * P)   -  0.034 * Math.cos(5 * P)
+    -  0.038 * Math.sin(6 * P)   +  0.031 * Math.cos(6 * P)
+    +  0.020 * Math.sin(S - P)   -  0.010 * Math.cos(S - P);
+  return rev(lon) * DEG;
+}
 
 /* Display config: ring = orbit radius on screen (px), size = planet radius,
  * color = fill. Rings are hand-tuned (roughly log-spaced) so every orbit is
- * visible rather than physically to-scale. */
+ * visible rather than physically to-scale.
+ *
+ * `from` / `until` are the dates a body joined and left the list of planets.
+ * The sky shows the Solar System as it was understood on the selected date, so
+ * drag far enough back and the outer planets go out one by one; Mercury
+ * through Saturn have no `from` because nobody had to discover them. */
 const PLANETS = [
   { name: "Mercury", ring: 52,  size: 2.6, color: "#b7b0a4" },
   { name: "Venus",   ring: 78,  size: 4.2, color: "#e6c98a" },
   { name: "Earth",   ring: 106, size: 4.4, color: "#5b9bff" },
   { name: "Mars",    ring: 138, size: 3.4, color: "#e07a4d" },
+  // A planet from Piazzi's discovery until the asteroid belt filled up around it.
+  { name: "Ceres",   ring: 162, size: 2.8, color: "#a9a49a",
+    from: Date.UTC(1801, 0, 1), until: Date.UTC(1852, 0, 1) },
   { name: "Jupiter", ring: 186, size: 9.0, color: "#d9a679" },
   { name: "Saturn",  ring: 226, size: 7.6, color: "#e8d19b" },
-  { name: "Uranus",  ring: 262, size: 5.6, color: "#9fe6e6" },
-  { name: "Neptune", ring: 298, size: 5.4, color: "#5b7bff" },
+  // Herschel, 13 March 1781 — the first planet nobody had always known about.
+  { name: "Uranus",  ring: 262, size: 5.6, color: "#9fe6e6", from: Date.UTC(1781, 2, 13) },
+  // Predicted by Le Verrier, found by Galle on the night of 23 September 1846.
+  { name: "Neptune", ring: 290, size: 5.4, color: "#5b7bff", from: Date.UTC(1846, 8, 23) },
+  // Tombaugh, 18 February 1930 — until the IAU's definition on 24 August 2006.
+  { name: "Pluto",   ring: 312, size: 3.2, color: "#cbb6a4",
+    from: Date.UTC(1930, 1, 18), until: Date.UTC(2006, 7, 24) },
 ];
 
+/* Was this body a planet on the given date? */
+function isPlanetOn(p, ms) {
+  return (p.from === undefined || ms >= p.from) && (p.until === undefined || ms < p.until);
+}
+
 const DAY_MS = 86400000;
-const MIN_DATE = Date.UTC(1900, 0, 1);
+/* The past is not fenced off: keep dragging and you can leave recorded history
+ * entirely. The only floor is the earliest instant a JS Date can represent. */
+const MIN_DATE = -8.64e15;
 /* No birth dates in the future. Computed at load, not hardcoded, so a
  * long-deployed copy of the page never falls behind today's date. */
 const MAX_DATE = (() => {
@@ -67,6 +110,7 @@ function dayNumber(ms) {
 
 /* Heliocentric ecliptic longitude (radians) of a planet on day `dn`. */
 function heliocentricLongitude(name, dn) {
+  if (name === "Pluto") return plutoLongitude(dn);
   const el = ELEMENTS[name === "Earth" ? "Earth" : name];
   const N = rev(el.N[0] + el.N[1] * dn) * DEG;
   const i = (el.i[0] + el.i[1] * dn) * DEG;
@@ -130,7 +174,8 @@ function buildScene() {
   }
 
   for (const p of PLANETS) {
-    orbitsG.appendChild(svgEl("circle", { class: "orbit", "data-orbit": p.name, cx: 0, cy: 0, r: p.ring }));
+    const orbit = svgEl("circle", { class: "orbit", "data-orbit": p.name, cx: 0, cy: 0, r: p.ring });
+    orbitsG.appendChild(orbit);
 
     const g = svgEl("g", { class: "planet-group", "data-planet": p.name });
     // Generous grab radius: the popup shows this 640-unit scene at ~340px.
@@ -140,7 +185,7 @@ function buildScene() {
     label.textContent = p.name;
     g.append(hit, body, label);
     planetsG.appendChild(g);
-    nodes[p.name] = { group: g, hit, body, label };
+    nodes[p.name] = { group: g, hit, body, label, orbit };
 
     attachDrag(p, g);
   }
@@ -149,6 +194,13 @@ function buildScene() {
 function render() {
   const dn = dayNumber(currentMs);
   for (const p of PLANETS) {
+    // Fade out anything that wasn't a planet on this date, and stop computing
+    // a position for it — Pluto's series is only valid over its own window.
+    const here = isPlanetOn(p, currentMs);
+    nodes[p.name].group.classList.toggle("gone", !here);
+    nodes[p.name].orbit.classList.toggle("gone", !here);
+    if (!here) continue;
+
     const lon = heliocentricLongitude(p.name, dn);
     const x = Math.cos(lon) * p.ring;
     const y = -Math.sin(lon) * p.ring; // SVG y grows downward
@@ -163,12 +215,28 @@ function render() {
   updateDateUI();
 }
 
+/* Both formatters have to cope with years outside 1..9999, since the past is
+ * unbounded: ISO 8601's expanded form for the form value, and an explicit BC
+ * suffix for the display (astronomical year 0 is 1 BC). */
+function isoDate(d) {
+  const y = d.getUTCFullYear();
+  const year = y < 0 ? "-" + String(-y).padStart(6, "0")
+             : y > 9999 ? "+" + String(y).padStart(6, "0")
+             : String(y).padStart(4, "0");
+  return `${year}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function displayDate(d) {
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const y = d.getUTCFullYear();
+  return y > 0 ? `${mm}/${dd}/${y}` : `${mm}/${dd}/${1 - y} BC`;
+}
+
 function updateDateUI() {
   const d = new Date(currentMs);
-  dateInput.value = d.toISOString().slice(0, 10);
-  dateText.textContent = d.toLocaleDateString("en-US", {
-    year: "numeric", month: "2-digit", day: "2-digit", timeZone: "UTC",
-  });
+  dateInput.value = isoDate(d);
+  dateText.textContent = displayDate(d);
 }
 
 /* ---- The dropdown: hover to open, drag to pick ------------------------ */
@@ -236,7 +304,8 @@ function attachDrag(planet, group) {
   let lastAngle = 0;
   let pointerId = null;
 
-  const meanMotion = ELEMENTS[planet.name].M[1]; // deg/day
+  // deg/day — how far the grabbed planet's own year stretches the timeline.
+  const meanMotion = planet.name === "Pluto" ? PLUTO_MOTION : ELEMENTS[planet.name].M[1];
 
   const onDown = (evt) => {
     evt.preventDefault();

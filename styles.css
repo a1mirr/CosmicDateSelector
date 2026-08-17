@@ -133,6 +133,15 @@ h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.5px; }
 }
 .orbit.active { stroke: rgba(110, 168, 255, 0.55); stroke-width: 2; }
 
+/* Bodies that weren't planets on the selected date fade away, orbit and all.
+ * The one you're currently dragging keeps its grab handle even after it winks
+ * out, so you can always drag it back into existence. */
+.planet-group,
+.orbit { transition: opacity 0.35s ease; }
+.planet-group.gone,
+.orbit.gone { opacity: 0; }
+.planet-group.gone:not(.active) { pointer-events: none; }
+
 .planet-hit {
   fill: transparent;
   cursor: grab;
