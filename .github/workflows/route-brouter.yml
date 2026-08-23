@@ -1,0 +1,49 @@
+name: Route with BRouter
+
+on:
+  push:
+    branches: [claude/route-with-brouter-script-6uib9t]
+    paths:
+      - route_with_brouter.py
+      - pest-loop-variant-B.gpx
+      - .github/workflows/route-brouter.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  route:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Snap the skeleton to roads
+        run: |
+          set -x
+          python3 route_with_brouter.py pest-loop-variant-B.gpx --chunk 8 --pause 2 \
+            || python3 route_with_brouter.py pest-loop-variant-B.gpx --chunk 5 --pause 4 \
+            || python3 route_with_brouter.py pest-loop-variant-B.gpx --chunk 3 --pause 6
+
+      - name: Summarise the track
+        run: |
+          python3 - <<'PY'
+          import math, xml.etree.ElementTree as ET
+          NS = "{http://www.topografix.com/GPX/1/1}"
+          pts = [(float(p.get("lat")), float(p.get("lon")))
+                 for p in ET.parse("pest-loop-variant-B-routed-trekking.gpx").getroot().iter(NS + "trkpt")]
+          def d(a, b):
+              (la1, lo1), (la2, lo2) = map(lambda p: (math.radians(p[0]), math.radians(p[1])), (a, b))
+              h = math.sin((la2-la1)/2)**2 + math.cos(la1)*math.cos(la2)*math.sin((lo2-lo1)/2)**2
+              return 2 * 6371.0 * math.asin(math.sqrt(h))
+          print(f"track points: {len(pts)}")
+          print(f"length: {sum(d(pts[i-1], pts[i]) for i in range(1, len(pts))):.1f} km")
+          PY
+
+      - name: Commit the routed track
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pest-loop-variant-B-routed-trekking.gpx
+          git commit -m "Add the BRouter-snapped track for Pest loop variant B [skip ci]"
+          git push
