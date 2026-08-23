@@ -28,6 +28,7 @@
     <rtept lat="47.369000" lon="19.999000"><name>Jaszboldoghaza</name></rtept>
     <rtept lat="47.333900" lon="19.954000"><name>Tapiogyorgye</name></rtept>
     <rtept lat="47.291300" lon="19.841100"><name>Tapioszolos</name></rtept>
+    <rtept lat="47.171645" lon="19.797752"><name>Cegled</name></rtept>
     <rtept lat="47.100500" lon="19.804300"><name>Nyarsapat</name></rtept>
     <rtept lat="47.031700" lon="19.780400"><name>Nagykoros</name></rtept>
     <rtept lat="47.028400" lon="19.542600"><name>Lajosmizse</name></rtept>
@@ -38,6 +39,7 @@
     <rtept lat="47.093600" lon="19.007900"><name>Domsod</name></rtept>
     <rtept lat="47.175600" lon="18.941800"><name>Rackeve</name></rtept>
     <rtept lat="47.339600" lon="19.035200"><name>Szigetszentmiklos</name></rtept>
-    <rtept lat="47.431018" lon="19.060673"><name>Budapest Csepel</name></rtept>
+    <rtept lat="47.424400" lon="19.066100"><name>Budapest Csepel</name></rtept>
+    <rtept lat="47.510600" lon="19.056700"><name>Budapest Nyugati pu. (finish)</name></rtept>
   </rte>
 </gpx>
