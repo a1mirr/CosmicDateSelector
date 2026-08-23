@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Pest loop variant B" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>Pest loop, variant B (Cserhat) - via points</name>
+    <desc>Skeleton route: via points only, NOT snapped to roads. Feed into a router (BRouter / OsmAnd / Komoot) to get a real track.</desc>
+  </metadata>
+  <wpt lat="47.510600" lon="19.056700">
+    <name>Budapest Nyugati pu.</name>
+    <desc>start / finish</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.634400" lon="19.139700">
+    <name>Dunakeszi</name>
+    <desc>liniya 70</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.694200" lon="19.140100">
+    <name>God</name>
+    <desc>liniya 70</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.730000" lon="19.143200">
+    <name>Szodliget</name>
+    <desc>liniya 70</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.782800" lon="19.133100">
+    <name>Vac</name>
+    <desc>ETAP 1/2 - liniya 70</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.801100" lon="19.386100">
+    <name>Acsa-Erdokurt vasutallomas</name>
+    <desc>ETAP 2/3 - liniya 78 -&gt; Aszod</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.791300" lon="19.668200">
+    <name>Apc-Zagyvaszanto vasutallomas</name>
+    <desc>liniya 81 -&gt; Hatvan</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.663600" lon="19.671400">
+    <name>Hatvan</name>
+    <desc>ETAP 3/4 - liniya 80</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.494400" lon="19.893300">
+    <name>Jaszbereny</name>
+    <desc>ETAP 4/5 - liniya 82</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.182400" lon="19.806700">
+    <name>Cegled</name>
+    <desc>ETAP 5/6 - liniya 100</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.031700" lon="19.780400">
+    <name>Nagykoros</name>
+    <desc>liniya 140</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.028400" lon="19.542600">
+    <name>Lajosmizse</name>
+    <desc>ETAP 6/7 - liniya 142</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.018700" lon="19.100300">
+    <name>Kunszentmiklos vasutallomas</name>
+    <desc>ETAP 7/8 - liniya 150</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.175600" lon="18.941800">
+    <name>Rackeve</name>
+    <desc>HEV H6</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.339600" lon="19.035200">
+    <name>Szigetszentmiklos</name>
+    <desc>ETAP 8/9 - HEV H6</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.424400" lon="19.066100">
+    <name>Budapest Csepel</name>
+    <desc>HEV H6</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <wpt lat="47.510600" lon="19.056700">
+    <name>Budapest Nyugati pu. (finish)</name>
+    <desc>finish</desc>
+    <sym>Flag, Blue</sym>
+  </wpt>
+  <rte>
+    <name>Pest loop variant B (~380 km, 9 etapov)</name>
+    <rtept lat="47.510600" lon="19.056700">
+      <name>Budapest Nyugati pu.</name>
+      <desc>start / finish</desc>
+    </rtept>
+    <rtept lat="47.634400" lon="19.139700">
+      <name>Dunakeszi</name>
+      <desc>liniya 70</desc>
+    </rtept>
+    <rtept lat="47.694200" lon="19.140100">
+      <name>God</name>
+      <desc>liniya 70</desc>
+    </rtept>
+    <rtept lat="47.730000" lon="19.143200">
+      <name>Szodliget</name>
+      <desc>liniya 70</desc>
+    </rtept>
+    <rtept lat="47.782800" lon="19.133100">
+      <name>Vac</name>
+      <desc>ETAP 1/2 - liniya 70</desc>
+    </rtept>
+    <rtept lat="47.808100" lon="19.177600">
+      <name>Kosd</name>
+    </rtept>
+    <rtept lat="47.882000" lon="19.141000">
+      <name>Notincs</name>
+    </rtept>
+    <rtept lat="47.858200" lon="19.192000">
+      <name>Osagard</name>
+    </rtept>
+    <rtept lat="47.802700" lon="19.249300">
+      <name>Penc</name>
+    </rtept>
+    <rtept lat="47.838700" lon="19.354100">
+      <name>Nogradsap</name>
+    </rtept>
+    <rtept lat="47.797000" lon="19.381500">
+      <name>Acsa</name>
+    </rtept>
+    <rtept lat="47.801100" lon="19.386100">
+      <name>Acsa-Erdokurt vasutallomas</name>
+      <desc>ETAP 2/3 - liniya 78 -&gt; Aszod</desc>
+    </rtept>
+    <rtept lat="47.773400" lon="19.458200">
+      <name>Erdokurt</name>
+    </rtept>
+    <rtept lat="47.749100" lon="19.489900">
+      <name>Kallo</name>
+    </rtept>
+    <rtept lat="47.778700" lon="19.588200">
+      <name>Hehalom</name>
+    </rtept>
+    <rtept lat="47.795800" lon="19.596000">
+      <name>Palotas</name>
+    </rtept>
+    <rtept lat="47.829400" lon="19.681500">
+      <name>Jobbagyi</name>
+    </rtept>
+    <rtept lat="47.791300" lon="19.668200">
+      <name>Apc-Zagyvaszanto vasutallomas</name>
+      <desc>liniya 81 -&gt; Hatvan</desc>
+    </rtept>
+    <rtept lat="47.663600" lon="19.671400">
+      <name>Hatvan</name>
+      <desc>ETAP 3/4 - liniya 80</desc>
+    </rtept>
+    <rtept lat="47.598000" lon="19.692000">
+      <name>Boldog</name>
+    </rtept>
+    <rtept lat="47.571600" lon="19.723500">
+      <name>Jaszfenyszaru</name>
+    </rtept>
+    <rtept lat="47.506800" lon="19.788700">
+      <name>Jaszfelsoszentgyorgy</name>
+    </rtept>
+    <rtept lat="47.556400" lon="19.792000">
+      <name>Pusztamonostor</name>
+    </rtept>
+    <rtept lat="47.494400" lon="19.893300">
+      <name>Jaszbereny</name>
+      <desc>ETAP 4/5 - liniya 82</desc>
+    </rtept>
+    <rtept lat="47.369000" lon="19.999000">
+      <name>Jaszboldoghaza</name>
+    </rtept>
+    <rtept lat="47.333900" lon="19.954000">
+      <name>Tapiogyorgye</name>
+    </rtept>
+    <rtept lat="47.291300" lon="19.841100">
+      <name>Tapioszolos</name>
+    </rtept>
+    <rtept lat="47.182400" lon="19.806700">
+      <name>Cegled</name>
+      <desc>ETAP 5/6 - liniya 100</desc>
+    </rtept>
+    <rtept lat="47.100500" lon="19.804300">
+      <name>Nyarsapat</name>
+    </rtept>
+    <rtept lat="47.031700" lon="19.780400">
+      <name>Nagykoros</name>
+      <desc>liniya 140</desc>
+    </rtept>
+    <rtept lat="47.028400" lon="19.542600">
+      <name>Lajosmizse</name>
+      <desc>ETAP 6/7 - liniya 142</desc>
+    </rtept>
+    <rtept lat="46.989100" lon="19.400000">
+      <name>Kunbaracs</name>
+    </rtept>
+    <rtept lat="47.061200" lon="19.275400">
+      <name>Kunpeszer</name>
+    </rtept>
+    <rtept lat="47.018700" lon="19.100300">
+      <name>Kunszentmiklos vasutallomas</name>
+      <desc>ETAP 7/8 - liniya 150</desc>
+    </rtept>
+    <rtept lat="47.019700" lon="19.031000">
+      <name>Tass</name>
+    </rtept>
+    <rtept lat="47.093600" lon="19.007900">
+      <name>Domsod</name>
+    </rtept>
+    <rtept lat="47.175600" lon="18.941800">
+      <name>Rackeve</name>
+      <desc>HEV H6</desc>
+    </rtept>
+    <rtept lat="47.339600" lon="19.035200">
+      <name>Szigetszentmiklos</name>
+      <desc>ETAP 8/9 - HEV H6</desc>
+    </rtept>
+    <rtept lat="47.424400" lon="19.066100">
+      <name>Budapest Csepel</name>
+      <desc>HEV H6</desc>
+    </rtept>
+    <rtept lat="47.510600" lon="19.056700">
+      <name>Budapest Nyugati pu. (finish)</name>
+      <desc>finish</desc>
+    </rtept>
+  </rte>
+</gpx>
