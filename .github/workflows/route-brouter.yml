@@ -18,12 +18,115 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Snap the skeleton to roads
+      - name: Probe every leg and repair via points BRouter cannot map
         run: |
-          set -x
-          python3 route_with_brouter.py pest-loop-variant-B.gpx --chunk 8 --pause 2 \
-            || python3 route_with_brouter.py pest-loop-variant-B.gpx --chunk 5 --pause 4 \
-            || python3 route_with_brouter.py pest-loop-variant-B.gpx --chunk 3 --pause 6
+          python3 - <<'PY'
+          import json, math, time, urllib.parse, urllib.request, urllib.error
+          import xml.etree.ElementTree as ET
+
+          NS = "{http://www.topografix.com/GPX/1/1}"
+          UA = {"User-Agent": "pest-loop-route-check/1.0 (github actions)"}
+
+          root = ET.parse("pest-loop-variant-B.gpx").getroot()
+          pts = []
+          for p in root.iter(NS + "rtept"):
+              n = p.find(NS + "name")
+              pts.append([float(p.get("lat")), float(p.get("lon")), n.text if n is not None else ""])
+          # drop consecutive duplicates, same rule the script uses
+          vias = []
+          for p in pts:
+              if vias and abs(vias[-1][0] - p[0]) < 1e-6 and abs(vias[-1][1] - p[1]) < 1e-6:
+                  continue
+              vias.append(p)
+          print(f"{len(vias)} via points\n")
+
+          def brouter(pair):
+              url = "https://brouter.de/brouter?" + urllib.parse.urlencode({
+                  "lonlats": "|".join(f"{lon:.6f},{lat:.6f}" for lat, lon, _ in pair),
+                  "profile": "trekking", "alternativeidx": "0", "format": "gpx"})
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=90) as r:
+                      return 200, r.read()[:200]
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read()[:300]
+              except Exception as e:
+                  return 0, str(e).encode()
+
+          print("=== probing each leg ===")
+          bad_legs = []
+          for i in range(len(vias) - 1):
+              a, b = vias[i], vias[i + 1]
+              code, body = brouter([a, b])
+              if code != 200:
+                  bad_legs.append(i)
+                  print(f"  LEG {i:2d} {a[2]} -> {b[2]}: HTTP {code} :: {body.decode('utf-8','replace').strip()}")
+              time.sleep(1.2)
+          print(f"  {len(bad_legs)} failing legs\n")
+
+          # a via point is the culprit if every leg touching it fails
+          suspects = set()
+          for i in bad_legs:
+              suspects |= {i, i + 1}
+          culprits = []
+          for s in sorted(suspects):
+              touching = [i for i in (s - 1, s) if 0 <= i < len(vias) - 1]
+              if all(i in bad_legs for i in touching):
+                  culprits.append(s)
+          print(f"=== unroutable via points: {[vias[c][2] for c in culprits]} ===")
+
+          def haversine(a, b):
+              la1, lo1, la2, lo2 = map(math.radians, (a[0], a[1], b[0], b[1]))
+              h = math.sin((la2-la1)/2)**2 + math.cos(la1)*math.cos(la2)*math.sin((lo2-lo1)/2)**2
+              return 2 * 6371.0 * math.asin(math.sqrt(h))
+
+          def geocode(name):
+              url = "https://nominatim.openstreetmap.org/search?" + urllib.parse.urlencode(
+                  {"q": f"{name}, Hungary", "format": "json", "limit": "3"})
+              try:
+                  with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=30) as r:
+                      return json.load(r)
+              except Exception as e:
+                  print(f"    geocode failed: {e}")
+                  return []
+
+          drop = []
+          for c in culprits:
+              lat, lon, name = vias[c]
+              print(f"\n  {name} at {lat:.5f},{lon:.5f} cannot be mapped by BRouter")
+              best = None
+              for hit in geocode(name):
+                  cand = [float(hit["lat"]), float(hit["lon"])]
+                  d = haversine([lat, lon], cand)
+                  print(f"    candidate {hit.get('display_name','?')[:70]} -> {cand[0]:.5f},{cand[1]:.5f} ({d:.1f} km away)")
+                  if d <= 15 and (best is None or d < best[2]):
+                      best = (cand[0], cand[1], d)
+              if best is None:
+                  print("    no candidate within 15 km -> dropping this via point")
+                  drop.append(c)
+                  continue
+              code, body = brouter([vias[c - 1], [best[0], best[1], name]])
+              if code == 200:
+                  print(f"    MOVED to {best[0]:.5f},{best[1]:.5f} ({best[2]:.1f} km) and it routes")
+                  vias[c][0], vias[c][1] = best[0], best[1]
+              else:
+                  print(f"    relocated point still fails (HTTP {code}) -> dropping this via point")
+                  drop.append(c)
+              time.sleep(1.2)
+
+          vias = [v for i, v in enumerate(vias) if i not in drop]
+          with open("pest-loop-variant-B-checked.gpx", "w", encoding="utf-8") as f:
+              f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+              f.write('<gpx version="1.1" creator="probe" xmlns="http://www.topografix.com/GPX/1/1">\n  <rte>\n')
+              for lat, lon, name in vias:
+                  f.write(f'    <rtept lat="{lat:.6f}" lon="{lon:.6f}"><name>{name}</name></rtept>\n')
+              f.write('  </rte>\n</gpx>\n')
+          print(f"\nwrote pest-loop-variant-B-checked.gpx with {len(vias)} via points")
+          PY
+
+      - name: Snap the checked skeleton to roads
+        run: |
+          python3 route_with_brouter.py pest-loop-variant-B-checked.gpx \
+            --chunk 5 --pause 3 --out pest-loop-variant-B-routed-trekking.gpx
 
       - name: Summarise the track
         run: |
@@ -33,7 +136,7 @@ jobs:
           pts = [(float(p.get("lat")), float(p.get("lon")))
                  for p in ET.parse("pest-loop-variant-B-routed-trekking.gpx").getroot().iter(NS + "trkpt")]
           def d(a, b):
-              (la1, lo1), (la2, lo2) = map(lambda p: (math.radians(p[0]), math.radians(p[1])), (a, b))
+              (la1, lo1), (la2, lo2) = ((math.radians(x), math.radians(y)) for x, y in (a, b))
               h = math.sin((la2-la1)/2)**2 + math.cos(la1)*math.cos(la2)*math.sin((lo2-lo1)/2)**2
               return 2 * 6371.0 * math.asin(math.sqrt(h))
           print(f"track points: {len(pts)}")
@@ -44,6 +147,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add pest-loop-variant-B-routed-trekking.gpx
+          git add pest-loop-variant-B-routed-trekking.gpx pest-loop-variant-B-checked.gpx
           git commit -m "Add the BRouter-snapped track for Pest loop variant B [skip ci]"
           git push
